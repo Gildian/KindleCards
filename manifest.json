@@ -1,0 +1,11 @@
+{
+	"id": "kindle-cards",
+	"name": "KindleCards",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Convert Kindle highlights from My_Clippings.txt into flashcards",
+	"author": "Gildian Gonzales",
+	"authorUrl": "",
+	"fundingUrl": "",
+	"isDesktopOnly": false
+}
