@@ -51,7 +51,7 @@ if command -v npm &> /dev/null; then
     npm install
     echo "🔨 Building plugin..."
     npm run build
-    
+
     # Clean up development files
     rm -rf node_modules/
     rm -f package-lock.json
@@ -59,7 +59,7 @@ if command -v npm &> /dev/null; then
     rm -f esbuild.config.mjs
     rm -f version-bump.mjs
     rm -f *.ts
-    
+
     echo "✅ Installation complete!"
     echo ""
     echo "Next steps:"

@@ -29,7 +29,7 @@ export class FlashcardGenerator {
             template: '{{content}}\n?\n*Key concept from {{title}}*'
         }
     ];
-    
+
     static generateFlashcard(clipping: KindleClipping, template: string): string {
         return template
             .replace(/\{\{highlight\}\}/g, clipping.content)
@@ -41,7 +41,7 @@ export class FlashcardGenerator {
             .replace(/\{\{date\}\}/g, clipping.date)
             .replace(/\{\{type\}\}/g, clipping.type);
     }
-    
+
     static generateFileName(clipping: KindleClipping, pattern: string = '{{title}} - {{location}}'): string {
         const fileName = pattern
             .replace(/\{\{title\}\}/g, clipping.title)
@@ -49,10 +49,10 @@ export class FlashcardGenerator {
             .replace(/\{\{location\}\}/g, clipping.location)
             .replace(/\{\{date\}\}/g, clipping.date)
             .replace(/\{\{type\}\}/g, clipping.type);
-            
+
         return this.sanitizeFileName(fileName) + '.md';
     }
-    
+
     static sanitizeFileName(fileName: string): string {
         return fileName
             .replace(/[\\/:*?"<>|]/g, '-')
@@ -60,7 +60,7 @@ export class FlashcardGenerator {
             .trim()
             .substring(0, 200); // Limit length
     }
-    
+
     static previewTemplate(template: string): string {
         const sampleClipping: KindleClipping = {
             title: 'Sample Book',
@@ -70,7 +70,7 @@ export class FlashcardGenerator {
             date: 'Monday, January 15, 2025 10:30:00 AM',
             content: 'This is a sample highlight from a book.'
         };
-        
+
         return this.generateFlashcard(sampleClipping, template);
     }
 }

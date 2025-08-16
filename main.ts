@@ -85,7 +85,7 @@ export default class KindleCardsPlugin extends Plugin {
 	async syncKindleClippings() {
 		try {
 			new Notice('Starting Kindle sync...');
-			
+
 			// Check if Kindle path is set
 			if (!this.settings.kindlePath) {
 				new Notice('Please set your Kindle path in settings');
@@ -105,12 +105,12 @@ export default class KindleCardsPlugin extends Plugin {
 				new Notice(`Error: ${validation.message}`);
 				return;
 			}
-			
+
 			const clippings = KindleParser.parseClippings(clippingsContent);
-			
+
 			// Create flashcards
 			await this.createFlashcardsFromClippings(clippings);
-			
+
 			new Notice(`Created ${clippings.length} flashcards from Kindle highlights`);
 		} catch (error) {
 			console.error('Error syncing Kindle clippings:', error);
@@ -120,22 +120,30 @@ export default class KindleCardsPlugin extends Plugin {
 
 	async readKindleClippings(): Promise<string | null> {
 		try {
-			// This would need to be adapted based on how file access works in Obsidian
-			// For now, we'll use a file picker approach
+			// Use file picker approach with better debugging
 			const input = document.createElement('input');
 			input.type = 'file';
 			input.accept = '.txt';
-			
+
 			return new Promise((resolve) => {
 				input.onchange = (e) => {
 					const file = (e.target as HTMLInputElement).files?.[0];
 					if (file) {
+						console.log('Selected file:', file.name, 'Size:', file.size);
 						const reader = new FileReader();
 						reader.onload = (e) => {
-							resolve(e.target?.result as string);
+							const content = e.target?.result as string;
+							console.log('File content length:', content?.length);
+							console.log('File content preview:', content?.substring(0, 200));
+							resolve(content);
+						};
+						reader.onerror = (e) => {
+							console.error('Error reading file:', e);
+							resolve(null);
 						};
 						reader.readAsText(file);
 					} else {
+						console.log('No file selected');
 						resolve(null);
 					}
 				};
@@ -151,7 +159,7 @@ export default class KindleCardsPlugin extends Plugin {
 		// Ensure output folder exists
 		const outputFolder = this.settings.outputFolder;
 		await this.ensureFolderExists(outputFolder);
-		
+
 		for (const clipping of clippings) {
 			await this.createFlashcardFromClipping(clipping);
 		}
@@ -160,17 +168,17 @@ export default class KindleCardsPlugin extends Plugin {
 	async createFlashcardFromClipping(clipping: KindleClipping) {
 		const fileName = FlashcardGenerator.generateFileName(clipping);
 		const filePath = `${this.settings.outputFolder}/${fileName}`;
-		
+
 		// Create flashcard content
 		const flashcardContent = FlashcardGenerator.generateFlashcard(clipping, this.settings.cardTemplate);
-		
+
 		// Check if file already exists
 		const existingFile = this.app.vault.getAbstractFileByPath(filePath);
 		if (existingFile) {
 			// File exists, could implement update logic here
 			return;
 		}
-		
+
 		// Create new file
 		await this.app.vault.create(filePath, flashcardContent);
 	}
@@ -183,9 +191,9 @@ export default class KindleCardsPlugin extends Plugin {
 	async createFlashcardFromText(text: string) {
 		const fileName = FlashcardGenerator.sanitizeFileName(`Flashcard - ${new Date().toISOString().split('T')[0]}`) + '.md';
 		const filePath = `${this.settings.outputFolder}/${fileName}`;
-		
+
 		const flashcardContent = `${text}\n?\n${text}`;
-		
+
 		await this.app.vault.create(filePath, flashcardContent);
 		new Notice('Flashcard created!');
 	}
