@@ -9,13 +9,25 @@ interface KindleCardsSettings {
 	outputFolder: string;
 	cardTemplate: string;
 	autoSync: boolean;
+	templateType: string;
+	addTags: boolean;
+	addBacklinks: boolean;
+	addFrontmatter: boolean;
+	groupByBook: boolean;
+	fileNamePattern: string;
 }
 
 const DEFAULT_SETTINGS: KindleCardsSettings = {
 	kindlePath: '',
 	outputFolder: 'KindleCards',
-	cardTemplate: '{{highlight}}\n?\n{{quote}}',
-	autoSync: false
+	cardTemplate: '{{content}}\n\n---\n\n**Source:** {{title}} by {{author}}\n**Location:** {{location}}',
+	autoSync: false,
+	templateType: 'Simple Q&A',
+	addTags: true,
+	addBacklinks: false,
+	addFrontmatter: false,
+	groupByBook: false,
+	fileNamePattern: '{{title}} - {{location}}'
 }
 
 export interface KindleClipping {
@@ -166,11 +178,24 @@ export default class KindleCardsPlugin extends Plugin {
 	}
 
 	async createFlashcardFromClipping(clipping: KindleClipping) {
-		const fileName = FlashcardGenerator.generateFileName(clipping);
+		const fileName = this.settings.groupByBook 
+			? FlashcardGenerator.generateGroupedFileName(clipping, 'book')
+			: FlashcardGenerator.generateFileName(clipping, this.settings.fileNamePattern);
+		
 		const filePath = `${this.settings.outputFolder}/${fileName}`;
+		
+		// Create necessary folders for grouped files
+		const folderPath = filePath.substring(0, filePath.lastIndexOf('/'));
+		await this.ensureFolderExists(folderPath);
 
-		// Create flashcard content
-		const flashcardContent = FlashcardGenerator.generateFlashcard(clipping, this.settings.cardTemplate);
+		// Create flashcard content with enhanced options
+		const options = {
+			addTags: this.settings.addTags,
+			addBacklinks: this.settings.addBacklinks,
+			addFrontmatter: this.settings.addFrontmatter
+		};
+		
+		const flashcardContent = FlashcardGenerator.generateFlashcard(clipping, this.settings.cardTemplate, options);
 
 		// Check if file already exists
 		const existingFile = this.app.vault.getAbstractFileByPath(filePath);
@@ -258,19 +283,96 @@ class KindleCardsSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
+			.setName('Template Type')
+			.setDesc('Choose a predefined template style')
+			.addDropdown(dropdown => {
+				FlashcardGenerator.DEFAULT_TEMPLATES.forEach(template => {
+					dropdown.addOption(template.name, template.name);
+				});
+				dropdown
+					.setValue(this.plugin.settings.templateType)
+					.onChange(async (value) => {
+						this.plugin.settings.templateType = value;
+						const selectedTemplate = FlashcardGenerator.DEFAULT_TEMPLATES.find(t => t.name === value);
+						if (selectedTemplate) {
+							this.plugin.settings.cardTemplate = selectedTemplate.template;
+						}
+						await this.plugin.saveSettings();
+						this.display(); // Refresh to show updated template
+					});
+			});
+
+		new Setting(containerEl)
 			.setName('Card Template')
-			.setDesc('Template for flashcards. Use {{highlight}}, {{quote}}, {{title}}, {{author}}, {{location}}, {{date}}')
+			.setDesc('Template for flashcards. Use {{content}}, {{title}}, {{author}}, {{location}}, {{date}}, {{type}}')
 			.addTextArea(text => text
-				.setPlaceholder('{{highlight}}\n?\n{{quote}}')
+				.setPlaceholder('{{content}}\n\n**Source:** {{title}} by {{author}}')
 				.setValue(this.plugin.settings.cardTemplate)
 				.onChange(async (value) => {
 					this.plugin.settings.cardTemplate = value;
 					await this.plugin.saveSettings();
 				}));
 
+		// File Organization Section
+		containerEl.createEl('h3', { text: 'File Organization' });
+
+		new Setting(containerEl)
+			.setName('Group by Book')
+			.setDesc('Organize flashcards in folders by book title')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.groupByBook)
+				.onChange(async (value) => {
+					this.plugin.settings.groupByBook = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('File Name Pattern')
+			.setDesc('Pattern for flashcard file names')
+			.addText(text => text
+				.setPlaceholder('{{title}} - {{location}}')
+				.setValue(this.plugin.settings.fileNamePattern)
+				.onChange(async (value) => {
+					this.plugin.settings.fileNamePattern = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Enhancement Options Section
+		containerEl.createEl('h3', { text: 'Enhancement Options' });
+
+		new Setting(containerEl)
+			.setName('Add Tags')
+			.setDesc('Automatically add tags for author, book, and highlight type')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.addTags)
+				.onChange(async (value) => {
+					this.plugin.settings.addTags = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Add Backlinks')
+			.setDesc('Add links to book and author pages')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.addBacklinks)
+				.onChange(async (value) => {
+					this.plugin.settings.addBacklinks = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Add YAML Frontmatter')
+			.setDesc('Include structured metadata at the top of each flashcard')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.addFrontmatter)
+				.onChange(async (value) => {
+					this.plugin.settings.addFrontmatter = value;
+					await this.plugin.saveSettings();
+				}));
+
 		new Setting(containerEl)
 			.setName('Auto Sync')
-			.setDesc('Automatically sync when Kindle is connected')
+			.setDesc('Automatically sync when Kindle is connected (coming soon)')
 			.addToggle(toggle => toggle
 				.setValue(this.plugin.settings.autoSync)
 				.onChange(async (value) => {
