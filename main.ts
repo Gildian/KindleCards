@@ -1,6 +1,7 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from 'obsidian';
 import { KindleParser } from './kindle-parser';
 import { FlashcardGenerator } from './flashcard-generator';
+import { FlashcardStudyModal } from './flashcard-modal';
 
 // Remember to rename these classes and interfaces!
 
@@ -46,9 +47,15 @@ export default class KindleCardsPlugin extends Plugin {
 		await this.loadSettings();
 
 		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('book-open', 'KindleCards', (evt: MouseEvent) => {
+		const ribbonIconEl = this.addRibbonIcon('book-open', 'KindleCards - Sync', (evt: MouseEvent) => {
 			// Called when the user clicks the icon.
 			this.syncKindleClippings();
+		});
+
+		// Add study mode ribbon icon
+		const studyIconEl = this.addRibbonIcon('brain', 'KindleCards - Study', (evt: MouseEvent) => {
+			// Called when the user clicks the study icon.
+			this.startStudySession();
 		});
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
@@ -61,6 +68,24 @@ export default class KindleCardsPlugin extends Plugin {
 			name: 'Sync Kindle Clippings',
 			callback: () => {
 				this.syncKindleClippings();
+			}
+		});
+
+		// Add study session command
+		this.addCommand({
+			id: 'start-study-session',
+			name: 'Start Flashcard Study Session',
+			callback: () => {
+				this.startStudySession();
+			}
+		});
+
+		// Add study current folder command
+		this.addCommand({
+			id: 'study-current-folder',
+			name: 'Study Flashcards in Current Folder',
+			callback: () => {
+				this.studyCurrentFolder();
 			}
 		});
 
@@ -228,6 +253,195 @@ export default class KindleCardsPlugin extends Plugin {
 		if (!folder) {
 			await this.app.vault.createFolder(folderPath);
 		}
+	}
+
+	async startStudySession() {
+		try {
+			// Get all flashcards from the output folder
+			const clippings = await this.loadAllFlashcards();
+			
+			if (clippings.length === 0) {
+				new Notice('No flashcards found! Sync your Kindle highlights first.');
+				return;
+			}
+
+			// Shuffle the cards for better studying
+			const shuffledClippings = this.shuffleArray([...clippings]);
+			
+			// Open the study modal
+			const studyModal = new FlashcardStudyModal(this.app, shuffledClippings);
+			studyModal.open();
+			
+		} catch (error) {
+			console.error('Error starting study session:', error);
+			new Notice('Error starting study session. Check console for details.');
+		}
+	}
+
+	async studyCurrentFolder() {
+		try {
+			const activeFile = this.app.workspace.getActiveFile();
+			if (!activeFile) {
+				new Notice('No active file. Please open a file in the folder you want to study.');
+				return;
+			}
+
+			const folderPath = activeFile.parent?.path || '';
+			const clippings = await this.loadFlashcardsFromFolder(folderPath);
+			
+			if (clippings.length === 0) {
+				new Notice('No flashcards found in current folder.');
+				return;
+			}
+
+			const shuffledClippings = this.shuffleArray([...clippings]);
+			const studyModal = new FlashcardStudyModal(this.app, shuffledClippings);
+			studyModal.open();
+			
+		} catch (error) {
+			console.error('Error studying current folder:', error);
+			new Notice('Error studying current folder. Check console for details.');
+		}
+	}
+
+	private async loadAllFlashcards(): Promise<KindleClipping[]> {
+		const clippings: KindleClipping[] = [];
+		const folder = this.app.vault.getAbstractFileByPath(this.settings.outputFolder);
+		
+		if (!folder || !(folder instanceof TFolder)) {
+			return clippings;
+		}
+
+		for (const child of folder.children) {
+			if (child instanceof TFile && child.extension === 'md') {
+				const clipping = await this.parseFlashcardFile(child);
+				if (clipping) {
+					clippings.push(clipping);
+				}
+			}
+		}
+
+		return clippings;
+	}
+
+	private async loadFlashcardsFromFolder(folderPath: string): Promise<KindleClipping[]> {
+		const clippings: KindleClipping[] = [];
+		const folder = this.app.vault.getAbstractFileByPath(folderPath);
+		
+		if (!folder || !(folder instanceof TFolder)) {
+			return clippings;
+		}
+
+		for (const child of folder.children) {
+			if (child instanceof TFile && child.extension === 'md') {
+				const clipping = await this.parseFlashcardFile(child);
+				if (clipping) {
+					clippings.push(clipping);
+				}
+			}
+		}
+
+		return clippings;
+	}
+
+	private async parseFlashcardFile(file: TFile): Promise<KindleClipping | null> {
+		try {
+			const content = await this.app.vault.read(file);
+			
+			// Try to extract metadata from frontmatter or content
+			const lines = content.split('\n');
+			let title = 'Unknown';
+			let author = 'Unknown';
+			let location = 'Unknown';
+			let date = 'Unknown';
+			let type = 'Highlight';
+			
+			// Look for YAML frontmatter
+			if (content.startsWith('---')) {
+				const frontmatterEnd = content.indexOf('---', 3);
+				if (frontmatterEnd > 0) {
+					const frontmatter = content.substring(4, frontmatterEnd);
+					const yamlLines = frontmatter.split('\n');
+					
+					for (const line of yamlLines) {
+						if (line.includes('book:')) title = line.split('book:')[1]?.replace(/['"]/g, '').trim() || title;
+						if (line.includes('author:')) author = line.split('author:')[1]?.replace(/['"]/g, '').trim() || author;
+						if (line.includes('location:')) location = line.split('location:')[1]?.replace(/['"]/g, '').trim() || location;
+						if (line.includes('date:')) date = line.split('date:')[1]?.replace(/['"]/g, '').trim() || date;
+						if (line.includes('type:')) type = line.split('type:')[1]?.replace(/['"]/g, '').trim() || type;
+					}
+				}
+			}
+
+			// Extract the main content (remove frontmatter and metadata)
+			let mainContent = content;
+			if (content.startsWith('---')) {
+				const frontmatterEnd = content.indexOf('---', 3);
+				if (frontmatterEnd > 0) {
+					mainContent = content.substring(frontmatterEnd + 3).trim();
+				}
+			}
+
+			// Try to extract content from different template formats
+			const cleanContent = this.extractContentFromFlashcard(mainContent);
+
+			return {
+				title,
+				author,
+				type,
+				location,
+				date,
+				content: cleanContent
+			};
+			
+		} catch (error) {
+			console.error('Error parsing flashcard file:', file.path, error);
+			return null;
+		}
+	}
+
+	private extractContentFromFlashcard(content: string): string {
+		// Remove common markdown formatting and try to extract the main quote
+		let extracted = content;
+		
+		// Remove headers
+		extracted = extracted.replace(/^#+\s+.*/gm, '');
+		
+		// Look for quoted content
+		const quoteMatch = extracted.match(/[""]([^"""]+)[""]/) || extracted.match(/"([^"]+)"/);
+		if (quoteMatch) {
+			return quoteMatch[1].trim();
+		}
+		
+		// Look for content in blockquotes
+		const blockquoteMatch = extracted.match(/^>\s*(.+)/m);
+		if (blockquoteMatch) {
+			return blockquoteMatch[1].trim();
+		}
+		
+		// Take first substantial paragraph
+		const lines = extracted.split('\n').filter(line => {
+			const trimmed = line.trim();
+			return trimmed && 
+				   !trimmed.startsWith('#') && 
+				   !trimmed.startsWith('**Source:**') &&
+				   !trimmed.startsWith('**Book:**') &&
+				   !trimmed.startsWith('**Author:**') &&
+				   !trimmed.startsWith('*From') &&
+				   !trimmed.startsWith('---') &&
+				   !trimmed.match(/^[*#-]/);
+		});
+		
+		return lines[0]?.trim() || content.trim();
+	}
+
+	private shuffleArray<T>(array: T[]): T[] {
+		const shuffled = [...array];
+		for (let i = shuffled.length - 1; i > 0; i--) {
+			const j = Math.floor(Math.random() * (i + 1));
+			[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+		}
+		return shuffled;
 	}
 }
 
