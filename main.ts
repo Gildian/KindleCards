@@ -46,16 +46,10 @@ export default class KindleCardsPlugin extends Plugin {
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('book-open', 'KindleCards - Sync', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			this.syncKindleClippings();
-		});
-
-		// Add study mode ribbon icon
-		const studyIconEl = this.addRibbonIcon('brain', 'KindleCards - Study', (evt: MouseEvent) => {
-			// Called when the user clicks the study icon.
-			this.startStudySession();
+		// This creates a single icon in the left ribbon for both sync and study
+		const ribbonIconEl = this.addRibbonIcon('book-open', 'KindleCards', (evt: MouseEvent) => {
+			// Open the main KindleCards interface
+			this.openKindleCardsInterface();
 		});
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
@@ -117,6 +111,10 @@ export default class KindleCardsPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	openKindleCardsInterface() {
+		new KindleCardsMainModal(this.app, this).open();
 	}
 
 	async syncKindleClippings() {
@@ -203,12 +201,12 @@ export default class KindleCardsPlugin extends Plugin {
 	}
 
 	async createFlashcardFromClipping(clipping: KindleClipping) {
-		const fileName = this.settings.groupByBook 
+		const fileName = this.settings.groupByBook
 			? FlashcardGenerator.generateGroupedFileName(clipping, 'book')
 			: FlashcardGenerator.generateFileName(clipping, this.settings.fileNamePattern);
-		
+
 		const filePath = `${this.settings.outputFolder}/${fileName}`;
-		
+
 		// Create necessary folders for grouped files
 		const folderPath = filePath.substring(0, filePath.lastIndexOf('/'));
 		await this.ensureFolderExists(folderPath);
@@ -219,7 +217,7 @@ export default class KindleCardsPlugin extends Plugin {
 			addBacklinks: this.settings.addBacklinks,
 			addFrontmatter: this.settings.addFrontmatter
 		};
-		
+
 		const flashcardContent = FlashcardGenerator.generateFlashcard(clipping, this.settings.cardTemplate, options);
 
 		// Check if file already exists
@@ -259,7 +257,7 @@ export default class KindleCardsPlugin extends Plugin {
 		try {
 			// Get all flashcards from the output folder
 			const clippings = await this.loadAllFlashcards();
-			
+
 			if (clippings.length === 0) {
 				new Notice('No flashcards found! Sync your Kindle highlights first.');
 				return;
@@ -267,11 +265,11 @@ export default class KindleCardsPlugin extends Plugin {
 
 			// Shuffle the cards for better studying
 			const shuffledClippings = this.shuffleArray([...clippings]);
-			
+
 			// Open the study modal
 			const studyModal = new FlashcardStudyModal(this.app, shuffledClippings);
 			studyModal.open();
-			
+
 		} catch (error) {
 			console.error('Error starting study session:', error);
 			new Notice('Error starting study session. Check console for details.');
@@ -288,7 +286,7 @@ export default class KindleCardsPlugin extends Plugin {
 
 			const folderPath = activeFile.parent?.path || '';
 			const clippings = await this.loadFlashcardsFromFolder(folderPath);
-			
+
 			if (clippings.length === 0) {
 				new Notice('No flashcards found in current folder.');
 				return;
@@ -297,7 +295,7 @@ export default class KindleCardsPlugin extends Plugin {
 			const shuffledClippings = this.shuffleArray([...clippings]);
 			const studyModal = new FlashcardStudyModal(this.app, shuffledClippings);
 			studyModal.open();
-			
+
 		} catch (error) {
 			console.error('Error studying current folder:', error);
 			new Notice('Error studying current folder. Check console for details.');
@@ -307,7 +305,7 @@ export default class KindleCardsPlugin extends Plugin {
 	private async loadAllFlashcards(): Promise<KindleClipping[]> {
 		const clippings: KindleClipping[] = [];
 		const folder = this.app.vault.getAbstractFileByPath(this.settings.outputFolder);
-		
+
 		if (!folder || !(folder instanceof TFolder)) {
 			return clippings;
 		}
@@ -327,7 +325,7 @@ export default class KindleCardsPlugin extends Plugin {
 	private async loadFlashcardsFromFolder(folderPath: string): Promise<KindleClipping[]> {
 		const clippings: KindleClipping[] = [];
 		const folder = this.app.vault.getAbstractFileByPath(folderPath);
-		
+
 		if (!folder || !(folder instanceof TFolder)) {
 			return clippings;
 		}
@@ -347,7 +345,7 @@ export default class KindleCardsPlugin extends Plugin {
 	private async parseFlashcardFile(file: TFile): Promise<KindleClipping | null> {
 		try {
 			const content = await this.app.vault.read(file);
-			
+
 			// Try to extract metadata from frontmatter or content
 			const lines = content.split('\n');
 			let title = 'Unknown';
@@ -355,14 +353,14 @@ export default class KindleCardsPlugin extends Plugin {
 			let location = 'Unknown';
 			let date = 'Unknown';
 			let type = 'Highlight';
-			
+
 			// Look for YAML frontmatter
 			if (content.startsWith('---')) {
 				const frontmatterEnd = content.indexOf('---', 3);
 				if (frontmatterEnd > 0) {
 					const frontmatter = content.substring(4, frontmatterEnd);
 					const yamlLines = frontmatter.split('\n');
-					
+
 					for (const line of yamlLines) {
 						if (line.includes('book:')) title = line.split('book:')[1]?.replace(/['"]/g, '').trim() || title;
 						if (line.includes('author:')) author = line.split('author:')[1]?.replace(/['"]/g, '').trim() || author;
@@ -393,7 +391,7 @@ export default class KindleCardsPlugin extends Plugin {
 				date,
 				content: cleanContent
 			};
-			
+
 		} catch (error) {
 			console.error('Error parsing flashcard file:', file.path, error);
 			return null;
@@ -403,27 +401,27 @@ export default class KindleCardsPlugin extends Plugin {
 	private extractContentFromFlashcard(content: string): string {
 		// Remove common markdown formatting and try to extract the main quote
 		let extracted = content;
-		
+
 		// Remove headers
 		extracted = extracted.replace(/^#+\s+.*/gm, '');
-		
+
 		// Look for quoted content
 		const quoteMatch = extracted.match(/[""]([^"""]+)[""]/) || extracted.match(/"([^"]+)"/);
 		if (quoteMatch) {
 			return quoteMatch[1].trim();
 		}
-		
+
 		// Look for content in blockquotes
 		const blockquoteMatch = extracted.match(/^>\s*(.+)/m);
 		if (blockquoteMatch) {
 			return blockquoteMatch[1].trim();
 		}
-		
+
 		// Take first substantial paragraph
 		const lines = extracted.split('\n').filter(line => {
 			const trimmed = line.trim();
-			return trimmed && 
-				   !trimmed.startsWith('#') && 
+			return trimmed &&
+				   !trimmed.startsWith('#') &&
 				   !trimmed.startsWith('**Source:**') &&
 				   !trimmed.startsWith('**Book:**') &&
 				   !trimmed.startsWith('**Author:**') &&
@@ -431,7 +429,7 @@ export default class KindleCardsPlugin extends Plugin {
 				   !trimmed.startsWith('---') &&
 				   !trimmed.match(/^[*#-]/);
 		});
-		
+
 		return lines[0]?.trim() || content.trim();
 	}
 
@@ -457,6 +455,88 @@ class KindleCardsModal extends Modal {
 
 	onClose() {
 		const {contentEl} = this;
+		contentEl.empty();
+	}
+}
+
+class KindleCardsMainModal extends Modal {
+	plugin: KindleCardsPlugin;
+
+	constructor(app: App, plugin: KindleCardsPlugin) {
+		super(app);
+		this.plugin = plugin;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.addClass('kindle-cards-main-modal');
+
+		contentEl.createEl('h2', { text: 'KindleCards' });
+		contentEl.createEl('p', { text: 'Sync your Kindle highlights and study with flashcards' });
+
+		// Sync Section
+		const syncSection = contentEl.createDiv('kindle-cards-main-section');
+		syncSection.createEl('h3', { text: '📖 Sync Kindle Highlights' });
+		syncSection.createEl('p', {
+			text: 'Import highlights from your Kindle\'s My_Clippings.txt file and convert them into flashcards.',
+			cls: 'kindle-cards-section-desc'
+		});
+
+		const syncButton = syncSection.createEl('button', {
+			text: 'Sync Now',
+			cls: 'kindle-cards-action-button kindle-cards-sync-btn'
+		});
+		syncButton.onclick = () => {
+			this.close();
+			this.plugin.syncKindleClippings();
+		};
+
+		// Study Section
+		const studySection = contentEl.createDiv('kindle-cards-main-section');
+		studySection.createEl('h3', { text: '🧠 Study Flashcards' });
+		studySection.createEl('p', {
+			text: 'Review your flashcards in an interactive study session with spaced repetition.',
+			cls: 'kindle-cards-section-desc'
+		});
+
+		const studyButton = studySection.createEl('button', {
+			text: 'Start Study Session',
+			cls: 'kindle-cards-action-button kindle-cards-study-btn'
+		});
+		studyButton.onclick = () => {
+			this.close();
+			this.plugin.startStudySession();
+		};
+
+		// Quick Actions
+		const quickSection = contentEl.createDiv('kindle-cards-main-section');
+		quickSection.createEl('h3', { text: '⚡ Quick Actions' });
+
+		const actionsDiv = quickSection.createDiv('kindle-cards-quick-actions');
+
+		const studyFolderButton = actionsDiv.createEl('button', {
+			text: 'Study Current Folder',
+			cls: 'kindle-cards-quick-button'
+		});
+		studyFolderButton.onclick = () => {
+			this.close();
+			this.plugin.studyCurrentFolder();
+		};
+
+		const settingsButton = actionsDiv.createEl('button', {
+			text: 'Settings',
+			cls: 'kindle-cards-quick-button'
+		});
+		settingsButton.onclick = () => {
+			this.close();
+			// Open settings
+			(this.app as any).setting.open();
+			(this.app as any).setting.openTabById(this.plugin.manifest.id);
+		};
+	}
+
+	onClose() {
+		const { contentEl } = this;
 		contentEl.empty();
 	}
 }
