@@ -1,4 +1,4 @@
-import { App, Modal, Notice, Setting, ButtonComponent } from 'obsidian';
+import { App, Modal, Notice, ButtonComponent } from 'obsidian';
 import { KindleClipping } from './main';
 
 export class FlashcardStudyModal extends Modal {
@@ -79,12 +79,6 @@ export class FlashcardStudyModal extends Modal {
         const cardContainer = cardSection.createEl('div', { cls: 'flashcard-card-container' });
         this.cardContent = cardContainer.createEl('div', { cls: 'flashcard-content' });
 
-        // Card flip indicator
-        const flipIndicator = cardContainer.createEl('div', {
-            cls: 'flashcard-flip-indicator',
-            text: 'Click to flip'
-        });
-
         // Make card clickable to flip
         cardContainer.onclick = () => this.flipCard();
     }
@@ -138,14 +132,18 @@ export class FlashcardStudyModal extends Modal {
         const currentClipping = this.clippings[this.currentIndex];
         this.showingAnswer = false;
 
-        // Show question side (the quote/highlight)
+        // Show question side (create a proper question)
         this.cardContent.empty();
+        this.cardContent.createEl('div', { cls: 'flashcard-flip-indicator', text: 'QUESTION' });
 
         const questionEl = this.cardContent.createEl('div', { cls: 'flashcard-question' });
-        questionEl.createEl('p', { text: currentClipping.content });
+
+        // Create a proper question from the highlight
+        const questionText = `What insight is highlighted in "${currentClipping.title}"?`;
+        questionEl.createEl('p', { text: questionText });
 
         const hintEl = this.cardContent.createEl('div', { cls: 'flashcard-hint' });
-        hintEl.createEl('em', { text: `From "${currentClipping.title}" by ${currentClipping.author}` });
+        hintEl.createEl('em', { text: `Page ${currentClipping.location}` });
 
         // Update UI state
         this.updateControlsState();
@@ -162,22 +160,25 @@ export class FlashcardStudyModal extends Modal {
         const currentClipping = this.clippings[this.currentIndex];
         this.showingAnswer = true;
 
-        // Show answer side (with context and metadata)
+        // Show answer side (the actual highlight/content)
         this.cardContent.empty();
+        this.cardContent.createEl('div', { cls: 'flashcard-flip-indicator', text: 'ANSWER' });
 
         const answerEl = this.cardContent.createEl('div', { cls: 'flashcard-answer' });
 
-        // Main content
+        // The actual highlighted content/quote
         const contentEl = answerEl.createEl('div', { cls: 'flashcard-answer-content' });
-        contentEl.createEl('p', { text: currentClipping.content });
+        contentEl.createEl('p', { text: `"${currentClipping.content}"` });
 
-        // Metadata
+        // Simple metadata - show book title, author (if available), and page
         const metadataEl = answerEl.createEl('div', { cls: 'flashcard-metadata' });
         metadataEl.createEl('strong', { text: currentClipping.title });
+        if (currentClipping.author && currentClipping.author !== 'Unknown') {
+            metadataEl.createEl('br');
+            metadataEl.createEl('span', { text: `by ${currentClipping.author}` });
+        }
         metadataEl.createEl('br');
-        metadataEl.createEl('span', { text: `by ${currentClipping.author}` });
-        metadataEl.createEl('br');
-        metadataEl.createEl('small', { text: `Location: ${currentClipping.location} | ${currentClipping.date}` });
+        metadataEl.createEl('small', { text: `Page: ${currentClipping.location}` });
 
         this.updateControlsState();
     }
@@ -273,8 +274,9 @@ export class FlashcardStudyModal extends Modal {
 
         const resultsEl = completionEl.createEl('div', { cls: 'flashcard-results' });
 
-        const accuracy = this.studyStats.total > 0
-            ? Math.round((this.studyStats.correct / (this.studyStats.correct + this.studyStats.incorrect)) * 100)
+        const totalAnswered = this.studyStats.correct + this.studyStats.incorrect;
+        const accuracy = totalAnswered > 0
+            ? Math.round((this.studyStats.correct / totalAnswered) * 100)
             : 0;
 
         resultsEl.createEl('p', { text: `You studied ${this.studyStats.total} flashcards` });

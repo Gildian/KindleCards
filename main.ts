@@ -3,32 +3,16 @@ import { KindleParser } from './kindle-parser';
 import { FlashcardGenerator } from './flashcard-generator';
 import { FlashcardStudyModal } from './flashcard-modal';
 
-// Remember to rename these classes and interfaces!
-
 interface KindleCardsSettings {
 	kindlePath: string;
 	outputFolder: string;
 	cardTemplate: string;
-	autoSync: boolean;
-	templateType: string;
-	addTags: boolean;
-	addBacklinks: boolean;
-	addFrontmatter: boolean;
-	groupByBook: boolean;
-	fileNamePattern: string;
 }
 
 const DEFAULT_SETTINGS: KindleCardsSettings = {
 	kindlePath: '',
 	outputFolder: 'KindleCards',
-	cardTemplate: '{{content}}\n\n---\n\n**Source:** {{title}} by {{author}}\n**Location:** {{location}}',
-	autoSync: false,
-	templateType: 'Simple Q&A',
-	addTags: true,
-	addBacklinks: false,
-	addFrontmatter: false,
-	groupByBook: false,
-	fileNamePattern: '{{title}} - {{location}}'
+	cardTemplate: '{{content}}\n\n**Source:** {{title}} by {{author}} - Page {{location}}'
 }
 
 export interface KindleClipping {
@@ -201,24 +185,12 @@ export default class KindleCardsPlugin extends Plugin {
 	}
 
 	async createFlashcardFromClipping(clipping: KindleClipping) {
-		const fileName = this.settings.groupByBook
-			? FlashcardGenerator.generateGroupedFileName(clipping, 'book')
-			: FlashcardGenerator.generateFileName(clipping, this.settings.fileNamePattern);
-
+		// Create simple filename from title and location
+		const fileName = FlashcardGenerator.sanitizeFileName(`${clipping.title} - ${clipping.location}`) + '.md';
 		const filePath = `${this.settings.outputFolder}/${fileName}`;
 
-		// Create necessary folders for grouped files
-		const folderPath = filePath.substring(0, filePath.lastIndexOf('/'));
-		await this.ensureFolderExists(folderPath);
-
-		// Create flashcard content with enhanced options
-		const options = {
-			addTags: this.settings.addTags,
-			addBacklinks: this.settings.addBacklinks,
-			addFrontmatter: this.settings.addFrontmatter
-		};
-
-		const flashcardContent = FlashcardGenerator.generateFlashcard(clipping, this.settings.cardTemplate, options);
+		// Create flashcard content with simple template
+		const flashcardContent = FlashcardGenerator.generateFlashcard(clipping, this.settings.cardTemplate);
 
 		// Check if file already exists
 		const existingFile = this.app.vault.getAbstractFileByPath(filePath);
@@ -231,19 +203,27 @@ export default class KindleCardsPlugin extends Plugin {
 		await this.app.vault.create(filePath, flashcardContent);
 	}
 
-	createFlashcardContent(clipping: KindleClipping): string {
-		// Use the flashcard generator instead
-		return FlashcardGenerator.generateFlashcard(clipping, this.settings.cardTemplate);
-	}
-
 	async createFlashcardFromText(text: string) {
 		const fileName = FlashcardGenerator.sanitizeFileName(`Flashcard - ${new Date().toISOString().split('T')[0]}`) + '.md';
 		const filePath = `${this.settings.outputFolder}/${fileName}`;
 
-		const flashcardContent = `${text}\n?\n${text}`;
+		const flashcardContent = FlashcardGenerator.generateFlashcard({
+			title: 'Custom Flashcard',
+			author: 'User Created',
+			type: 'Note',
+			location: 'N/A',
+			date: new Date().toLocaleString(),
+			content: text
+		}, this.settings.cardTemplate);
 
-		await this.app.vault.create(filePath, flashcardContent);
-		new Notice('Flashcard created!');
+		try {
+			await this.ensureFolderExists(this.settings.outputFolder);
+			await this.app.vault.create(filePath, flashcardContent);
+			new Notice('Flashcard created!');
+		} catch (error) {
+			console.error('Error creating flashcard:', error);
+			new Notice('Error creating flashcard. Check console for details.');
+		}
 	}
 
 	async ensureFolderExists(folderPath: string) {
@@ -256,7 +236,7 @@ export default class KindleCardsPlugin extends Plugin {
 	async startStudySession() {
 		try {
 			// Get all flashcards from the output folder
-			const clippings = await this.loadAllFlashcards();
+			const clippings = await this.loadFlashcardsFromFolder(this.settings.outputFolder);
 
 			if (clippings.length === 0) {
 				new Notice('No flashcards found! Sync your Kindle highlights first.');
@@ -302,26 +282,6 @@ export default class KindleCardsPlugin extends Plugin {
 		}
 	}
 
-	private async loadAllFlashcards(): Promise<KindleClipping[]> {
-		const clippings: KindleClipping[] = [];
-		const folder = this.app.vault.getAbstractFileByPath(this.settings.outputFolder);
-
-		if (!folder || !(folder instanceof TFolder)) {
-			return clippings;
-		}
-
-		for (const child of folder.children) {
-			if (child instanceof TFile && child.extension === 'md') {
-				const clipping = await this.parseFlashcardFile(child);
-				if (clipping) {
-					clippings.push(clipping);
-				}
-			}
-		}
-
-		return clippings;
-	}
-
 	private async loadFlashcardsFromFolder(folderPath: string): Promise<KindleClipping[]> {
 		const clippings: KindleClipping[] = [];
 		const folder = this.app.vault.getAbstractFileByPath(folderPath);
@@ -346,42 +306,46 @@ export default class KindleCardsPlugin extends Plugin {
 		try {
 			const content = await this.app.vault.read(file);
 
-			// Try to extract metadata from frontmatter or content
-			const lines = content.split('\n');
+			// Initialize with defaults
 			let title = 'Unknown';
 			let author = 'Unknown';
 			let location = 'Unknown';
 			let date = 'Unknown';
 			let type = 'Highlight';
 
-			// Look for YAML frontmatter
-			if (content.startsWith('---')) {
-				const frontmatterEnd = content.indexOf('---', 3);
-				if (frontmatterEnd > 0) {
-					const frontmatter = content.substring(4, frontmatterEnd);
-					const yamlLines = frontmatter.split('\n');
+			// Parse the simple template format: {{content}}\n\n**Source:** {{title}} - Page {{location}}
+			const lines = content.split('\n');
+			let mainContent = '';
+			let sourceFound = false;
 
-					for (const line of yamlLines) {
-						if (line.includes('book:')) title = line.split('book:')[1]?.replace(/['"]/g, '').trim() || title;
-						if (line.includes('author:')) author = line.split('author:')[1]?.replace(/['"]/g, '').trim() || author;
-						if (line.includes('location:')) location = line.split('location:')[1]?.replace(/['"]/g, '').trim() || location;
-						if (line.includes('date:')) date = line.split('date:')[1]?.replace(/['"]/g, '').trim() || date;
-						if (line.includes('type:')) type = line.split('type:')[1]?.replace(/['"]/g, '').trim() || type;
+			for (let i = 0; i < lines.length; i++) {
+				const line = lines[i].trim();
+
+				if (line.startsWith('**Source:**')) {
+					sourceFound = true;
+					// Extract title, author and page from: **Source:** BookTitle by Author - Page 123
+					const sourceMatch = line.match(/\*\*Source:\*\*\s*(.+?)\s+by\s+(.+?)\s*-\s*Page\s*(.+)/);
+					if (sourceMatch) {
+						title = sourceMatch[1].trim();
+						author = sourceMatch[2].trim();
+						location = sourceMatch[3].trim();
+					} else {
+						// Fallback for format without author: **Source:** BookTitle - Page 123
+						const simpleMatch = line.match(/\*\*Source:\*\*\s*(.+?)\s*-\s*Page\s*(.+)/);
+						if (simpleMatch) {
+							title = simpleMatch[1].trim();
+							location = simpleMatch[2].trim();
+						}
 					}
+				} else if (!sourceFound && line) {
+					// Content before the source line
+					if (mainContent) mainContent += ' ';
+					mainContent += line;
 				}
 			}
 
-			// Extract the main content (remove frontmatter and metadata)
-			let mainContent = content;
-			if (content.startsWith('---')) {
-				const frontmatterEnd = content.indexOf('---', 3);
-				if (frontmatterEnd > 0) {
-					mainContent = content.substring(frontmatterEnd + 3).trim();
-				}
-			}
-
-			// Try to extract content from different template formats
-			const cleanContent = this.extractContentFromFlashcard(mainContent);
+			// Clean up the content
+			mainContent = mainContent.trim();
 
 			return {
 				title,
@@ -389,7 +353,7 @@ export default class KindleCardsPlugin extends Plugin {
 				type,
 				location,
 				date,
-				content: cleanContent
+				content: mainContent
 			};
 
 		} catch (error) {
@@ -507,32 +471,6 @@ class KindleCardsMainModal extends Modal {
 			this.close();
 			this.plugin.startStudySession();
 		};
-
-		// Quick Actions
-		const quickSection = contentEl.createDiv('kindle-cards-main-section');
-		quickSection.createEl('h3', { text: '⚡ Quick Actions' });
-
-		const actionsDiv = quickSection.createDiv('kindle-cards-quick-actions');
-
-		const studyFolderButton = actionsDiv.createEl('button', {
-			text: 'Study Current Folder',
-			cls: 'kindle-cards-quick-button'
-		});
-		studyFolderButton.onclick = () => {
-			this.close();
-			this.plugin.studyCurrentFolder();
-		};
-
-		const settingsButton = actionsDiv.createEl('button', {
-			text: 'Settings',
-			cls: 'kindle-cards-quick-button'
-		});
-		settingsButton.onclick = () => {
-			this.close();
-			// Open settings
-			(this.app as any).setting.open();
-			(this.app as any).setting.openTabById(this.plugin.manifest.id);
-		};
 	}
 
 	onClose() {
@@ -577,100 +515,13 @@ class KindleCardsSettingTab extends PluginSettingTab {
 				}));
 
 		new Setting(containerEl)
-			.setName('Template Type')
-			.setDesc('Choose a predefined template style')
-			.addDropdown(dropdown => {
-				FlashcardGenerator.DEFAULT_TEMPLATES.forEach(template => {
-					dropdown.addOption(template.name, template.name);
-				});
-				dropdown
-					.setValue(this.plugin.settings.templateType)
-					.onChange(async (value) => {
-						this.plugin.settings.templateType = value;
-						const selectedTemplate = FlashcardGenerator.DEFAULT_TEMPLATES.find(t => t.name === value);
-						if (selectedTemplate) {
-							this.plugin.settings.cardTemplate = selectedTemplate.template;
-						}
-						await this.plugin.saveSettings();
-						this.display(); // Refresh to show updated template
-					});
-			});
-
-		new Setting(containerEl)
 			.setName('Card Template')
-			.setDesc('Template for flashcards. Use {{content}}, {{title}}, {{author}}, {{location}}, {{date}}, {{type}}')
+			.setDesc('Template for flashcards. Use {{content}}, {{title}}, {{author}}, {{location}}')
 			.addTextArea(text => text
-				.setPlaceholder('{{content}}\n\n**Source:** {{title}} by {{author}}')
+				.setPlaceholder('{{content}}\n\n**Source:** {{title}} by {{author}} - Page {{location}}')
 				.setValue(this.plugin.settings.cardTemplate)
 				.onChange(async (value) => {
 					this.plugin.settings.cardTemplate = value;
-					await this.plugin.saveSettings();
-				}));
-
-		// File Organization Section
-		containerEl.createEl('h3', { text: 'File Organization' });
-
-		new Setting(containerEl)
-			.setName('Group by Book')
-			.setDesc('Organize flashcards in folders by book title')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.groupByBook)
-				.onChange(async (value) => {
-					this.plugin.settings.groupByBook = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('File Name Pattern')
-			.setDesc('Pattern for flashcard file names')
-			.addText(text => text
-				.setPlaceholder('{{title}} - {{location}}')
-				.setValue(this.plugin.settings.fileNamePattern)
-				.onChange(async (value) => {
-					this.plugin.settings.fileNamePattern = value;
-					await this.plugin.saveSettings();
-				}));
-
-		// Enhancement Options Section
-		containerEl.createEl('h3', { text: 'Enhancement Options' });
-
-		new Setting(containerEl)
-			.setName('Add Tags')
-			.setDesc('Automatically add tags for author, book, and highlight type')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.addTags)
-				.onChange(async (value) => {
-					this.plugin.settings.addTags = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Add Backlinks')
-			.setDesc('Add links to book and author pages')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.addBacklinks)
-				.onChange(async (value) => {
-					this.plugin.settings.addBacklinks = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Add YAML Frontmatter')
-			.setDesc('Include structured metadata at the top of each flashcard')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.addFrontmatter)
-				.onChange(async (value) => {
-					this.plugin.settings.addFrontmatter = value;
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Auto Sync')
-			.setDesc('Automatically sync when Kindle is connected (coming soon)')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.autoSync)
-				.onChange(async (value) => {
-					this.plugin.settings.autoSync = value;
 					await this.plugin.saveSettings();
 				}));
 	}
