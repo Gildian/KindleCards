@@ -307,45 +307,97 @@ export default class KindleCardsPlugin extends Plugin {
 			const content = await this.app.vault.read(file);
 
 			// Initialize with defaults
-			let title = 'Unknown';
-			let author = 'Unknown';
+			let title = 'Unknown Book';
+			let author = 'Unknown Author';
 			let location = 'Unknown';
-			let date = 'Unknown';
+			let date = new Date().toLocaleDateString();
 			let type = 'Highlight';
-
-			// Parse the simple template format: {{content}}\n\n**Source:** {{title}} - Page {{location}}
-			const lines = content.split('\n');
 			let mainContent = '';
-			let sourceFound = false;
 
-			for (let i = 0; i < lines.length; i++) {
-				const line = lines[i].trim();
+			// Split into lines and process
+			const lines = content.split('\n');
+			const sourceLineIndex = lines.findIndex(line => line.trim().startsWith('**Source:**'));
 
-				if (line.startsWith('**Source:**')) {
-					sourceFound = true;
-					// Extract title, author and page from: **Source:** BookTitle by Author - Page 123
-					const sourceMatch = line.match(/\*\*Source:\*\*\s*(.+?)\s+by\s+(.+?)\s*-\s*Page\s*(.+)/);
-					if (sourceMatch) {
-						title = sourceMatch[1].trim();
-						author = sourceMatch[2].trim();
-						location = sourceMatch[3].trim();
+			if (sourceLineIndex !== -1) {
+				// Extract content (everything before the **Source:** line)
+				mainContent = lines.slice(0, sourceLineIndex)
+					.join('\n')
+					.trim();
+
+				// Strip common labels/metadata from the front text
+				mainContent = mainContent
+					.split('\n')
+					.filter(line => {
+						const l = line.trim();
+						if (!l) return false;
+						if (/^#/.test(l)) return false; // headers
+						if (/^#?flashcard\b/i.test(l)) return false; // tags
+						if (/^\*{0,2}(answer|location|page|added\s*on|date|source|tags?|type)\*{0,2}\s*:/i.test(l)) return false;
+						return true;
+					})
+					.join(' ')
+					.replace(/\s+/g, ' ')
+					.replace(/^\"|\"$/g, '')
+					.trim();
+
+				// Parse the source line
+				const sourceLine = lines[sourceLineIndex].trim();
+				console.log('Parsing source line:', sourceLine);
+
+				// Pattern: **Source:** Title by Author - Page Location
+				const fullMatch = sourceLine.match(/\*\*Source:\*\*\s*(.+?)\s+by\s+(.+?)\s*-\s*Page\s*(.+)/);
+				if (fullMatch) {
+					title = fullMatch[1].trim();
+					author = fullMatch[2].trim();
+					location = fullMatch[3].trim();
+				} else {
+					// Pattern: **Source:** Title - Page Location (no author)
+					const simpleMatch = sourceLine.match(/\*\*Source:\*\*\s*(.+?)\s*-\s*Page\s*(.+)/);
+					if (simpleMatch) {
+						title = simpleMatch[1].trim();
+						location = simpleMatch[2].trim();
+						// Try to extract author from title if format is "Title (Author)"
+						const titleAuthorMatch = title.match(/^(.+?)\s*\((.+?)\)$/);
+						if (titleAuthorMatch) {
+							title = titleAuthorMatch[1].trim();
+							author = titleAuthorMatch[2].trim();
+						}
 					} else {
-						// Fallback for format without author: **Source:** BookTitle - Page 123
-						const simpleMatch = line.match(/\*\*Source:\*\*\s*(.+?)\s*-\s*Page\s*(.+)/);
-						if (simpleMatch) {
-							title = simpleMatch[1].trim();
-							location = simpleMatch[2].trim();
+						// Just get everything after **Source:**
+						const basicMatch = sourceLine.match(/\*\*Source:\*\*\s*(.+)/);
+						if (basicMatch) {
+							title = basicMatch[1].trim();
 						}
 					}
-				} else if (!sourceFound && line) {
-					// Content before the source line
-					if (mainContent) mainContent += ' ';
-					mainContent += line;
 				}
+			} else {
+				// No source line found, use entire content
+				mainContent = content
+					.split('\n')
+					.filter(line => {
+						const l = line.trim();
+						if (!l) return false;
+						if (/^#/.test(l)) return false; // headers
+						if (/^#?flashcard\b/i.test(l)) return false;
+						if (/^\*{0,2}(answer|location|page|added\s*on|date|source|tags?|type)\*{0,2}\s*:/i.test(l)) return false;
+						return true;
+					})
+					.join(' ')
+					.replace(/\s+/g, ' ')
+					.replace(/^\"|\"$/g, '')
+					.trim();
+
+				// Try to get title from filename
+				title = file.basename.replace(/^\d+\s*-\s*/, '').replace(/\s*-\s*\d+.*$/, '') || 'Custom Flashcard';
 			}
 
-			// Clean up the content
-			mainContent = mainContent.trim();
+			console.log('Parsed flashcard:', { title, author, location, content: mainContent });
+
+			// Return null if we don't have meaningful content
+			if (!mainContent || mainContent.length < 3) {
+				console.warn('No meaningful content found in flashcard:', file.path);
+				return null;
+			}
 
 			return {
 				title,

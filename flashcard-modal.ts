@@ -49,13 +49,12 @@ export class FlashcardStudyModal extends Modal {
 
     private createHeader() {
         const headerEl = this.contentEl.createEl('div', { cls: 'flashcard-header' });
-        headerEl.createEl('h2', { text: 'Kindle Flashcard Study Session' });
-
         // Close button
         const closeButton = headerEl.createEl('button', {
             cls: 'flashcard-close-btn',
             text: '×'
         });
+        closeButton.style.marginLeft = 'auto';
         closeButton.onclick = () => this.close();
     }
 
@@ -132,18 +131,17 @@ export class FlashcardStudyModal extends Modal {
         const currentClipping = this.clippings[this.currentIndex];
         this.showingAnswer = false;
 
-        // Show question side (create a proper question)
+        // Show question side (front) – only the user's comment/notes if present
         this.cardContent.empty();
         this.cardContent.createEl('div', { cls: 'flashcard-flip-indicator', text: 'QUESTION' });
 
         const questionEl = this.cardContent.createEl('div', { cls: 'flashcard-question' });
-
-        // Create a proper question from the highlight
-        const questionText = `What insight is highlighted in "${currentClipping.title}"?`;
+        const { question, answer } = this.splitQuestionAndAnswer(currentClipping.content);
+        const cleanQuestion = this.cleanQuestion(question);
+        const questionText = cleanQuestion || (currentClipping.title && currentClipping.title !== 'Unknown Book'
+            ? `What insight from "${currentClipping.title}" is worth remembering?`
+            : 'What is this insight about?');
         questionEl.createEl('p', { text: questionText });
-
-        const hintEl = this.cardContent.createEl('div', { cls: 'flashcard-hint' });
-        hintEl.createEl('em', { text: `Page ${currentClipping.location}` });
 
         // Update UI state
         this.updateControlsState();
@@ -160,33 +158,134 @@ export class FlashcardStudyModal extends Modal {
         const currentClipping = this.clippings[this.currentIndex];
         this.showingAnswer = true;
 
-        // Show answer side (the actual highlight/content)
+        // Show answer side (just the quote, clean and simple)
         this.cardContent.empty();
         this.cardContent.createEl('div', { cls: 'flashcard-flip-indicator', text: 'ANSWER' });
 
         const answerEl = this.cardContent.createEl('div', { cls: 'flashcard-answer' });
 
-        // The actual highlighted content/quote
+        // Just the quote/content, nothing else
+        const { answer } = this.splitQuestionAndAnswer(currentClipping.content);
+        const cleanAnswer = this.cleanAnswer(answer || currentClipping.content);
         const contentEl = answerEl.createEl('div', { cls: 'flashcard-answer-content' });
-        contentEl.createEl('p', { text: `"${currentClipping.content}"` });
-
-        // Simple metadata - show book title, author (if available), and page
-        const metadataEl = answerEl.createEl('div', { cls: 'flashcard-metadata' });
-        metadataEl.createEl('strong', { text: currentClipping.title });
-        if (currentClipping.author && currentClipping.author !== 'Unknown') {
-            metadataEl.createEl('br');
-            metadataEl.createEl('span', { text: `by ${currentClipping.author}` });
-        }
-        metadataEl.createEl('br');
-        metadataEl.createEl('small', { text: `Page: ${currentClipping.location}` });
+        contentEl.createEl('p', { text: cleanAnswer });
 
         this.updateControlsState();
+    }
+
+    // Split the raw content into question (comment/notes) and answer (quote)
+    private splitQuestionAndAnswer(raw: string): { question: string; answer: string } {
+        const text = (raw || '').replace(/\r/g, '');
+        const answerLabel = /(\n|^)\s*\*{0,2}answer\*{0,2}\s*:?/i;
+        const idx = text.search(answerLabel);
+        if (idx !== -1) {
+            const before = text.slice(0, idx).trim();
+            // Skip the matched label and any following spaces/newlines
+            const afterLabel = text.slice(idx).replace(answerLabel, '').trimStart();
+            // Answer goes until another metadata label or end
+            const stopLabel = /(\n|^)\s*\*{0,2}(location|page|added\s*on|date|source|tags?|type)\*{0,2}\s*:|\n\s*---\s*\n/i;
+            const stopIdx = afterLabel.search(stopLabel);
+            const ans = (stopIdx !== -1 ? afterLabel.slice(0, stopIdx) : afterLabel).trim();
+            return { question: before, answer: ans };
+        }
+        // No explicit answer label; treat entire content as the answer
+        return { question: '', answer: text.trim() };
+    }
+
+    // Remove metadata, headings, tags from the question side
+    private cleanQuestion(text: string): string {
+        if (!text) return '';
+        
+        // Aggressive cleanup similar to answer
+        const cleanedText = text
+            .split('\n')
+            .filter(line => {
+                const l = line.trim();
+                if (!l) return false;
+                
+                // Remove any line with horizontal rules
+                if (/^[-*_]{3,}/.test(l)) return false;
+                
+                // Remove any line containing these metadata terms (anywhere in the line)
+                if (/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:/i.test(l)) return false;
+                if (/^\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*:/i.test(l)) return false;
+                
+                // Remove headers, blockquotes, lists
+                if (/^#/.test(l)) return false;
+                if (/^>/.test(l)) return false;
+                if (/^[*\-]\s+/.test(l)) return false;
+                if (/^#?flashcard\b/i.test(l)) return false;
+                
+                // Remove answer labels
+                if (/^\s*(?:\*\*)?\s*answer\s*(?:\*\*)?\s*:/i.test(l)) return false;
+                
+                return true;
+            })
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+            
+        // Second pass: remove any remaining metadata patterns and formatting
+        return cleanedText
+            .replace(/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:.*?(?=\n|$)/gi, '')
+            .replace(/(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*:.*?(?=\n|$)/gi, '')
+            .replace(/---+/g, '')
+            .replace(/\*\*/g, '') // Remove all bold formatting
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    // Remove labels, quotes, and metadata from the answer side
+    private cleanAnswer(text: string): string {
+        if (!text) return '';
+        
+        // First, aggressively remove any line that contains metadata
+        const cleanedText = text
+            .replace(/^\s*\"|\"\s*$/g, '') // remove surrounding quotes
+            .split('\n')
+            .filter(line => {
+                const l = line.trim();
+                if (!l) return false;
+                
+                // Remove any line with horizontal rules
+                if (/^[-*_]{3,}/.test(l)) return false;
+                
+                // Remove any line containing these metadata terms (anywhere in the line)
+                if (/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:/i.test(l)) return false;
+                if (/^\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*:/i.test(l)) return false;
+                
+                // Remove headers, blockquotes, lists
+                if (/^#/.test(l)) return false;
+                if (/^>/.test(l)) return false;
+                if (/^[*\-]\s+/.test(l)) return false;
+                if (/^#?flashcard\b/i.test(l)) return false;
+                
+                // Remove answer labels
+                if (/^\s*(?:\*\*)?\s*answer\s*(?:\*\*)?\s*:/i.test(l)) return false;
+                
+                return true;
+            })
+            .join(' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+            
+        // Second pass: remove any remaining metadata patterns and formatting
+        return cleanedText
+            .replace(/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:.*?(?=\n|$)/gi, '')
+            .replace(/(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*:.*?(?=\n|$)/gi, '')
+            .replace(/---+/g, '')
+            .replace(/\*\*/g, '') // Remove all bold formatting
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     private nextCard() {
         if (this.currentIndex < this.clippings.length - 1) {
             this.currentIndex++;
             this.displayCurrentCard();
+        } else if (this.currentIndex === this.clippings.length - 1) {
+            // On last card, show completion screen
+            this.showCompletionScreen();
         }
     }
 
@@ -203,6 +302,10 @@ export class FlashcardStudyModal extends Modal {
             return;
         }
 
+        // Prevent multiple clicks by immediately disabling buttons
+        this.correctButton.setDisabled(true);
+        this.incorrectButton.setDisabled(true);
+
         if (result === 'correct') {
             this.studyStats.correct++;
         } else {
@@ -212,27 +315,43 @@ export class FlashcardStudyModal extends Modal {
         this.studyStats.remaining--;
         this.updateStats();
 
-        // Auto-advance to next card
-        setTimeout(() => {
-            this.nextCard();
-        }, 500);
+        // Auto-advance to next card after a short delay
+        if (this.currentIndex < this.clippings.length - 1) {
+            setTimeout(() => {
+                this.currentIndex++;
+                this.displayCurrentCard();
+            }, 300);
+        } else {
+            // Last card - show completion after delay
+            setTimeout(() => {
+                this.showCompletionScreen();
+            }, 300);
+        }
     }
 
     private updateControlsState() {
-        // Update navigation buttons
+        // Update navigation buttons - disable prev on first card, next on last card
         this.prevButton.setDisabled(this.currentIndex === 0);
-        this.nextButton.setDisabled(this.currentIndex === this.clippings.length - 1);
+        this.nextButton.setDisabled(this.currentIndex >= this.clippings.length - 1);
 
         // Update flip button
-        this.flipButton.setButtonText(this.showingAnswer ? 'Card Flipped' : 'Flip Card');
-        this.flipButton.setDisabled(this.showingAnswer);
+        if (this.showingAnswer) {
+            this.flipButton.setButtonText('Flipped');
+            this.flipButton.setDisabled(true);
+        } else {
+            this.flipButton.setButtonText('Flip Card');
+            this.flipButton.setDisabled(false);
+        }
 
-        // Show/hide study buttons
+        // Show/hide study buttons based on whether answer is showing
         const studyButtons = this.contentEl.querySelector('.flashcard-study-buttons') as HTMLElement;
         if (studyButtons) {
             if (this.showingAnswer) {
                 studyButtons.style.display = 'flex';
                 studyButtons.removeClass('flashcard-study-buttons-hidden');
+                // Re-enable buttons when showing answer (in case they were disabled)
+                this.correctButton.setDisabled(false);
+                this.incorrectButton.setDisabled(false);
             } else {
                 studyButtons.style.display = 'none';
                 studyButtons.addClass('flashcard-study-buttons-hidden');

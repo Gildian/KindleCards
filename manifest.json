@@ -1,0 +1,10 @@
+{
+	"id": "kindle-cards",
+	"name": "KindleCards",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Sync Kindle highlights and create interactive flashcards for studying",
+	"author": "Gildian",
+	"authorUrl": "https://github.com/Gildian/KindleCards",
+	"isDesktopOnly": false
+}
