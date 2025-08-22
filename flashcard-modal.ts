@@ -195,36 +195,36 @@ export class FlashcardStudyModal extends Modal {
     // Remove metadata, headings, tags from the question side
     private cleanQuestion(text: string): string {
         if (!text) return '';
-        
+
         // Aggressive cleanup similar to answer
         const cleanedText = text
             .split('\n')
             .filter(line => {
                 const l = line.trim();
                 if (!l) return false;
-                
+
                 // Remove any line with horizontal rules
                 if (/^[-*_]{3,}/.test(l)) return false;
-                
+
                 // Remove any line containing these metadata terms (anywhere in the line)
                 if (/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:/i.test(l)) return false;
                 if (/^\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*:/i.test(l)) return false;
-                
+
                 // Remove headers, blockquotes, lists
                 if (/^#/.test(l)) return false;
                 if (/^>/.test(l)) return false;
                 if (/^[*\-]\s+/.test(l)) return false;
                 if (/^#?flashcard\b/i.test(l)) return false;
-                
+
                 // Remove answer labels
                 if (/^\s*(?:\*\*)?\s*answer\s*(?:\*\*)?\s*:/i.test(l)) return false;
-                
+
                 return true;
             })
             .join(' ')
             .replace(/\s+/g, ' ')
             .trim();
-            
+
         // Second pass: remove any remaining metadata patterns and formatting
         return cleanedText
             .replace(/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:.*?(?=\n|$)/gi, '')
@@ -238,7 +238,7 @@ export class FlashcardStudyModal extends Modal {
     // Remove labels, quotes, and metadata from the answer side
     private cleanAnswer(text: string): string {
         if (!text) return '';
-        
+
         // First, aggressively remove any line that contains metadata
         const cleanedText = text
             .replace(/^\s*\"|\"\s*$/g, '') // remove surrounding quotes
@@ -246,29 +246,29 @@ export class FlashcardStudyModal extends Modal {
             .filter(line => {
                 const l = line.trim();
                 if (!l) return false;
-                
+
                 // Remove any line with horizontal rules
                 if (/^[-*_]{3,}/.test(l)) return false;
-                
+
                 // Remove any line containing these metadata terms (anywhere in the line)
                 if (/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:/i.test(l)) return false;
                 if (/^\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*:/i.test(l)) return false;
-                
+
                 // Remove headers, blockquotes, lists
                 if (/^#/.test(l)) return false;
                 if (/^>/.test(l)) return false;
                 if (/^[*\-]\s+/.test(l)) return false;
                 if (/^#?flashcard\b/i.test(l)) return false;
-                
+
                 // Remove answer labels
                 if (/^\s*(?:\*\*)?\s*answer\s*(?:\*\*)?\s*:/i.test(l)) return false;
-                
+
                 return true;
             })
             .join(' ')
             .replace(/\s+/g, ' ')
             .trim();
-            
+
         // Second pass: remove any remaining metadata patterns and formatting
         return cleanedText
             .replace(/\*\*\s*(book|author|date\s*added|added\s*on|location|page|source|tags?|type)\s*\*\*\s*:.*?(?=\n|$)/gi, '')
