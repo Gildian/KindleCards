@@ -5,6 +5,7 @@ export class FlashcardStudyModal extends Modal {
     private clippings: KindleClipping[];
     private currentIndex: number = 0;
     private showingAnswer: boolean = false;
+    private bookTitle?: string;
     private studyStats: {
         total: number;
         correct: number;
@@ -23,9 +24,10 @@ export class FlashcardStudyModal extends Modal {
     private incorrectButton: ButtonComponent;
     private statsElement: HTMLElement;
 
-    constructor(app: App, clippings: KindleClipping[]) {
+    constructor(app: App, clippings: KindleClipping[], bookTitle?: string) {
         super(app);
         this.clippings = clippings;
+        this.bookTitle = bookTitle;
         this.studyStats = {
             total: clippings.length,
             correct: 0,
@@ -49,6 +51,13 @@ export class FlashcardStudyModal extends Modal {
 
     private createHeader() {
         const headerEl = this.contentEl.createEl('div', { cls: 'flashcard-header' });
+
+        // Book title if available
+        if (this.bookTitle) {
+            const bookTitleEl = headerEl.createEl('div', { cls: 'flashcard-book-title' });
+            bookTitleEl.textContent = `Studying: ${this.bookTitle}`;
+        }
+
         // Close button
         const closeButton = headerEl.createEl('button', {
             cls: 'flashcard-close-btn',
@@ -407,14 +416,26 @@ export class FlashcardStudyModal extends Modal {
             .setButtonText('Study Again')
             .setCta()
             .onClick(() => {
+                // Reset all state
                 this.currentIndex = 0;
+                this.showingAnswer = false;
                 this.studyStats = {
                     total: this.clippings.length,
                     correct: 0,
                     incorrect: 0,
                     remaining: this.clippings.length
                 };
-                this.onOpen();
+
+                // Recreate the UI from scratch (preserving bookTitle)
+                this.contentEl.empty();
+                this.createHeader();
+                this.createProgressSection();
+                this.createCardSection();
+                this.createControlButtons();
+                this.createStatsSection();
+
+                // Display the first card
+                this.displayCurrentCard();
             });
 
         new ButtonComponent(actionsEl)

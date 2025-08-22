@@ -2,6 +2,7 @@ import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Set
 import { KindleParser } from './kindle-parser';
 import { FlashcardGenerator } from './flashcard-generator';
 import { FlashcardStudyModal } from './flashcard-modal';
+import { BookSelectionModal } from './book-selection-modal';
 
 interface KindleCardsSettings {
 	kindlePath: string;
@@ -243,12 +244,9 @@ export default class KindleCardsPlugin extends Plugin {
 				return;
 			}
 
-			// Shuffle the cards for better studying
-			const shuffledClippings = this.shuffleArray([...clippings]);
-
-			// Open the study modal
-			const studyModal = new FlashcardStudyModal(this.app, shuffledClippings);
-			studyModal.open();
+			// Open the book selection modal
+			const bookSelectionModal = new BookSelectionModal(this.app, clippings);
+			bookSelectionModal.open();
 
 		} catch (error) {
 			console.error('Error starting study session:', error);
@@ -272,9 +270,9 @@ export default class KindleCardsPlugin extends Plugin {
 				return;
 			}
 
-			const shuffledClippings = this.shuffleArray([...clippings]);
-			const studyModal = new FlashcardStudyModal(this.app, shuffledClippings);
-			studyModal.open();
+			// Open the book selection modal for the current folder
+			const bookSelectionModal = new BookSelectionModal(this.app, clippings);
+			bookSelectionModal.open();
 
 		} catch (error) {
 			console.error('Error studying current folder:', error);

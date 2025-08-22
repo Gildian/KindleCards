@@ -1,5 +1,118 @@
 /* KindleCards Plugin Styles - Optimized */
 
+/* Book Selection Modal */
+.book-selection-modal {
+    max-width: 700px;
+    max-height: 80vh;
+}
+
+.book-selection-header {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid var(--background-modifier-border);
+    position: relative;
+}
+
+.book-selection-header h2 {
+    margin: 0 0 10px 0;
+    color: var(--text-accent);
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.book-selection-subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin: 0;
+}
+
+.book-selection-close-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 5px 10px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.book-selection-close-btn:hover {
+    background-color: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.book-list-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    padding-right: 10px;
+}
+
+.book-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    margin-bottom: 10px;
+    background-color: var(--background-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+    transition: all 0.2s ease;
+}
+
+.book-item:hover {
+    background-color: var(--background-modifier-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.book-info {
+    flex: 1;
+}
+
+.book-title {
+    font-weight: 600;
+    color: var(--text-normal);
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+
+.book-author {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.book-count {
+    color: var(--interactive-accent);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.book-selection-footer {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    padding-top: 20px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Flashcard Book Title */
+.flashcard-book-title {
+    color: var(--text-accent);
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 10px;
+}
+
 /* Main Modal Styles */
 .kindle-cards-main-modal {
     max-width: 600px;
