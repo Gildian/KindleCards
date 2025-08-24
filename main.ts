@@ -322,6 +322,10 @@ export default class KindleCardsPlugin extends Plugin {
 					.join('\n')
 					.trim();
 
+				// Also try to extract author from embedded metadata in content
+				const contentAuthorMatch = content.match(/\*\*Author:\*\*\s*([^\n\*]+)/i);
+				const contentBookMatch = content.match(/\*\*Book:\*\*\s*([^\n\*]+)/i);
+				
 				// Strip common labels/metadata from the front text
 				mainContent = mainContent
 					.split('\n')
@@ -330,7 +334,8 @@ export default class KindleCardsPlugin extends Plugin {
 						if (!l) return false;
 						if (/^#/.test(l)) return false; // headers
 						if (/^#?flashcard\b/i.test(l)) return false; // tags
-						if (/^\*{0,2}(answer|location|page|added\s*on|date|source|tags?|type)\*{0,2}\s*:/i.test(l)) return false;
+						if (/^\*{0,2}(answer|location|page|added\s*on|date|source|tags?|type|book|author)\*{0,2}\s*:/i.test(l)) return false;
+						if (/---/.test(l)) return false; // separator lines
 						return true;
 					})
 					.join(' ')
@@ -368,25 +373,49 @@ export default class KindleCardsPlugin extends Plugin {
 						}
 					}
 				}
+				
+				// Override with embedded metadata if found
+				if (contentAuthorMatch) {
+					author = contentAuthorMatch[1].trim();
+				}
+				if (contentBookMatch) {
+					title = contentBookMatch[1].trim();
+				}
 			} else {
-				// No source line found, use entire content
-				mainContent = content
+				// No source line found, use entire content and try to extract metadata from it
+				const fullContent = content;
+				
+				// Try to extract author from embedded **Author:** pattern in content
+				const authorMatch = fullContent.match(/\*\*Author:\*\*\s*([^\n\*]+)/i);
+				if (authorMatch) {
+					author = authorMatch[1].trim();
+				}
+				
+				// Try to extract title from embedded **Book:** pattern in content
+				const bookMatch = fullContent.match(/\*\*Book:\*\*\s*([^\n\*]+)/i);
+				if (bookMatch) {
+					title = bookMatch[1].trim();
+				} else {
+					// Try to get title from filename as fallback
+					title = file.basename.replace(/^\d+\s*-\s*/, '').replace(/\s*-\s*\d+.*$/, '') || 'Custom Flashcard';
+				}
+				
+				// Clean the main content by removing all metadata
+				mainContent = fullContent
 					.split('\n')
 					.filter(line => {
 						const l = line.trim();
 						if (!l) return false;
 						if (/^#/.test(l)) return false; // headers
 						if (/^#?flashcard\b/i.test(l)) return false;
-						if (/^\*{0,2}(answer|location|page|added\s*on|date|source|tags?|type)\*{0,2}\s*:/i.test(l)) return false;
+						if (/^\*{0,2}(answer|location|page|added\s*on|date|source|tags?|type|book|author)\*{0,2}\s*:/i.test(l)) return false;
+						if (/---/.test(l)) return false; // separator lines
 						return true;
 					})
 					.join(' ')
 					.replace(/\s+/g, ' ')
 					.replace(/^\"|\"$/g, '')
 					.trim();
-
-				// Try to get title from filename
-				title = file.basename.replace(/^\d+\s*-\s*/, '').replace(/\s*-\s*\d+.*$/, '') || 'Custom Flashcard';
 			}
 
 			console.log('Parsed flashcard:', { title, author, location, content: mainContent });

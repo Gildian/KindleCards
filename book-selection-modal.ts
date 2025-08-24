@@ -65,7 +65,23 @@ export class BookSelectionModal extends Modal {
             titleEl.textContent = book.title || 'Unknown Book';
 
             const authorEl = bookInfo.createEl('div', { cls: 'book-author' });
-            authorEl.textContent = `by ${book.author || 'Unknown Author'}`;
+            
+            console.log('Displaying book:', book.title, 'with author:', book.author);
+            
+            // Show author if it exists and isn't one of the "unknown" variants
+            if (book.author && 
+                book.author.trim() && 
+                book.author !== 'Unknown Author' && 
+                book.author.toLowerCase() !== 'unknown' &&
+                book.author.toLowerCase() !== 'unknown author') {
+                authorEl.textContent = `by ${book.author}`;
+                console.log('Showing author:', book.author);
+            } else {
+                // For truly unknown authors, just leave it blank
+                authorEl.textContent = '';
+                authorEl.style.display = 'none';
+                console.log('Hiding author for:', book.title, 'author was:', book.author);
+            }
 
             const countEl = bookInfo.createEl('div', { cls: 'book-count' });
             countEl.textContent = `${book.count} flashcard${book.count === 1 ? '' : 's'}`;
@@ -100,12 +116,37 @@ export class BookSelectionModal extends Modal {
         const bookMap = new Map<string, BookGroup>();
 
         clippings.forEach(clipping => {
+            // Debug logging
+            console.log('Processing clipping:', {
+                title: clipping.title,
+                author: clipping.author,
+                authorType: typeof clipping.author,
+                authorLength: clipping.author?.length
+            });
+            
             const bookKey = this.getBookKey(clipping);
-
+            
             if (!bookMap.has(bookKey)) {
+                // Clean up the author field, but preserve valid authors
+                let cleanAuthor = (clipping.author || '').trim();
+                
+                console.log('Original author:', clipping.author);
+                console.log('Clean author before filtering:', cleanAuthor);
+                
+                // Only clear if it's explicitly unknown
+                if (cleanAuthor === 'Unknown' || 
+                    cleanAuthor === 'Unknown Author' || 
+                    cleanAuthor.toLowerCase() === 'unknown author' ||
+                    cleanAuthor.toLowerCase() === 'unknown') {
+                    cleanAuthor = '';
+                    console.log('Cleared unknown author');
+                } else {
+                    console.log('Keeping author:', cleanAuthor);
+                }
+                
                 bookMap.set(bookKey, {
-                    title: clipping.title || 'Unknown Book',
-                    author: clipping.author || 'Unknown Author',
+                    title: (clipping.title || 'Unknown Book').trim(),
+                    author: cleanAuthor,
                     flashcards: [],
                     count: 0
                 });
@@ -116,13 +157,22 @@ export class BookSelectionModal extends Modal {
             bookGroup.count = bookGroup.flashcards.length;
         });
 
-        return Array.from(bookMap.values());
-    }
-
-    private getBookKey(clipping: KindleClipping): string {
+        const result = Array.from(bookMap.values());
+        console.log('Final book groups:', result);
+        return result;
+    }    private getBookKey(clipping: KindleClipping): string {
         // Create a unique key for each book based on title and author
         const title = (clipping.title || 'Unknown Book').toLowerCase().trim();
-        const author = (clipping.author || 'Unknown Author').toLowerCase().trim();
+        let author = (clipping.author || '').toLowerCase().trim();
+        
+        // Normalize unknown author variations
+        if (!author || 
+            author === 'unknown' || 
+            author === 'unknown author' || 
+            author === 'author unknown') {
+            author = '';
+        }
+        
         return `${title}|||${author}`;
     }
 

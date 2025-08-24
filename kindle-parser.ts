@@ -61,7 +61,7 @@ export class KindleParser {
 
         return {
             title: line.trim(),
-            author: 'Unknown'
+            author: 'Unknown Author'
         };
     }
 
