@@ -65,13 +65,13 @@ export class BookSelectionModal extends Modal {
             titleEl.textContent = book.title || 'Unknown Book';
 
             const authorEl = bookInfo.createEl('div', { cls: 'book-author' });
-            
+
             console.log('Displaying book:', book.title, 'with author:', book.author);
-            
+
             // Show author if it exists and isn't one of the "unknown" variants
-            if (book.author && 
-                book.author.trim() && 
-                book.author !== 'Unknown Author' && 
+            if (book.author &&
+                book.author.trim() &&
+                book.author !== 'Unknown Author' &&
                 book.author.toLowerCase() !== 'unknown' &&
                 book.author.toLowerCase() !== 'unknown author') {
                 authorEl.textContent = `by ${book.author}`;
@@ -123,19 +123,19 @@ export class BookSelectionModal extends Modal {
                 authorType: typeof clipping.author,
                 authorLength: clipping.author?.length
             });
-            
+
             const bookKey = this.getBookKey(clipping);
-            
+
             if (!bookMap.has(bookKey)) {
                 // Clean up the author field, but preserve valid authors
                 let cleanAuthor = (clipping.author || '').trim();
-                
+
                 console.log('Original author:', clipping.author);
                 console.log('Clean author before filtering:', cleanAuthor);
-                
+
                 // Only clear if it's explicitly unknown
-                if (cleanAuthor === 'Unknown' || 
-                    cleanAuthor === 'Unknown Author' || 
+                if (cleanAuthor === 'Unknown' ||
+                    cleanAuthor === 'Unknown Author' ||
                     cleanAuthor.toLowerCase() === 'unknown author' ||
                     cleanAuthor.toLowerCase() === 'unknown') {
                     cleanAuthor = '';
@@ -143,7 +143,7 @@ export class BookSelectionModal extends Modal {
                 } else {
                     console.log('Keeping author:', cleanAuthor);
                 }
-                
+
                 bookMap.set(bookKey, {
                     title: (clipping.title || 'Unknown Book').trim(),
                     author: cleanAuthor,
@@ -164,15 +164,15 @@ export class BookSelectionModal extends Modal {
         // Create a unique key for each book based on title and author
         const title = (clipping.title || 'Unknown Book').toLowerCase().trim();
         let author = (clipping.author || '').toLowerCase().trim();
-        
+
         // Normalize unknown author variations
-        if (!author || 
-            author === 'unknown' || 
-            author === 'unknown author' || 
+        if (!author ||
+            author === 'unknown' ||
+            author === 'unknown author' ||
             author === 'author unknown') {
             author = '';
         }
-        
+
         return `${title}|||${author}`;
     }
 
