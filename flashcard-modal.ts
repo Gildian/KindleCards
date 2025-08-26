@@ -1,16 +1,26 @@
 import { App, Modal, Notice, ButtonComponent } from 'obsidian';
 import { KindleClipping } from './main';
+import { SpacedRepetitionSystem } from './spaced-repetition';
+
+// Forward declaration to avoid circular dependency
+interface KindleCardsPlugin {
+    spacedRepetition: any;
+    settings: any;
+    saveSettings(): Promise<void>;
+}
 
 export class FlashcardStudyModal extends Modal {
     private clippings: KindleClipping[];
     private currentIndex: number = 0;
     private showingAnswer: boolean = false;
     private bookTitle?: string;
+    private plugin: KindleCardsPlugin | null;
     private studyStats: {
         total: number;
         correct: number;
         incorrect: number;
         remaining: number;
+        reviewed: number;
     };
 
     // UI Elements
@@ -24,15 +34,17 @@ export class FlashcardStudyModal extends Modal {
     private incorrectButton: ButtonComponent;
     private statsElement: HTMLElement;
 
-    constructor(app: App, clippings: KindleClipping[], bookTitle?: string) {
+    constructor(app: App, clippings: KindleClipping[], bookTitle?: string, plugin?: KindleCardsPlugin) {
         super(app);
         this.clippings = clippings;
         this.bookTitle = bookTitle;
+        this.plugin = plugin || null;
         this.studyStats = {
             total: clippings.length,
             correct: 0,
             incorrect: 0,
-            remaining: clippings.length
+            remaining: clippings.length,
+            reviewed: 0
         };
     }
 
@@ -52,10 +64,21 @@ export class FlashcardStudyModal extends Modal {
     private createHeader() {
         const headerEl = this.contentEl.createEl('div', { cls: 'flashcard-header' });
 
+        const headerContent = headerEl.createEl('div', { cls: 'flashcard-header-content' });
+
         // Book title if available
         if (this.bookTitle) {
-            const bookTitleEl = headerEl.createEl('div', { cls: 'flashcard-book-title' });
+            const bookTitleEl = headerContent.createEl('div', { cls: 'flashcard-book-title' });
             bookTitleEl.textContent = `Studying: ${this.bookTitle}`;
+        }
+
+        // Spaced repetition indicator
+        if (this.plugin?.settings?.enableSpacedRepetition) {
+            const srsIndicator = headerContent.createEl('div', { cls: 'flashcard-srs-indicator' });
+            srsIndicator.createEl('span', { 
+                text: '🧠 Spaced Repetition Active',
+                cls: 'srs-active-badge'
+            });
         }
 
         // Close button
@@ -332,6 +355,9 @@ export class FlashcardStudyModal extends Modal {
         this.correctButton.setDisabled(true);
         this.incorrectButton.setDisabled(true);
 
+        const currentClipping = this.clippings[this.currentIndex];
+
+        // Update traditional stats
         if (result === 'correct') {
             this.studyStats.correct++;
         } else {
@@ -339,6 +365,34 @@ export class FlashcardStudyModal extends Modal {
         }
 
         this.studyStats.remaining--;
+        this.studyStats.reviewed++;
+
+        // Handle spaced repetition if enabled
+        if (this.plugin?.settings?.enableSpacedRepetition && this.plugin.spacedRepetition) {
+            try {
+                // Generate card ID
+                const cardId = SpacedRepetitionSystem.generateCardId(
+                    currentClipping.title,
+                    currentClipping.author,
+                    currentClipping.content
+                );
+
+                // Map result to difficulty (0=easy, 1=medium, 2=hard)
+                const difficulty = result === 'correct' ? 0 : 2;
+
+                // Review the card
+                this.plugin.spacedRepetition.reviewCard(cardId, difficulty);
+
+                // Save the updated spaced repetition data
+                this.plugin.saveSettings().catch((error: Error) => {
+                    console.error('Failed to save spaced repetition data:', error);
+                });
+
+            } catch (error) {
+                console.error('Error updating spaced repetition data:', error);
+            }
+        }
+
         this.updateStats();
 
         // Auto-advance to next card after a short delay
@@ -404,6 +458,15 @@ export class FlashcardStudyModal extends Modal {
             { label: 'Remaining', value: this.studyStats.remaining, class: 'remaining' }
         ];
 
+        // Add spaced repetition stats if enabled
+        if (this.plugin?.settings?.enableSpacedRepetition && this.studyStats.reviewed > 0) {
+            stats.push({
+                label: 'Reviewed',
+                value: this.studyStats.reviewed,
+                class: 'reviewed'
+            });
+        }
+
         stats.forEach(stat => {
             const statEl = this.statsElement.createEl('div', { cls: `flashcard-stat flashcard-stat-${stat.class}` });
             statEl.createEl('div', { cls: 'stat-value', text: stat.value.toString() });
@@ -427,6 +490,14 @@ export class FlashcardStudyModal extends Modal {
         resultsEl.createEl('p', { text: `You studied ${this.studyStats.total} flashcards` });
         resultsEl.createEl('p', { text: `Accuracy: ${accuracy}% (${this.studyStats.correct} correct, ${this.studyStats.incorrect} need review)` });
 
+        // Add spaced repetition summary if enabled
+        if (this.plugin?.settings?.enableSpacedRepetition && this.studyStats.reviewed > 0) {
+            resultsEl.createEl('p', { 
+                text: `Spaced Repetition: ${this.studyStats.reviewed} cards reviewed and rescheduled`,
+                cls: 'srs-completion-info'
+            });
+        }
+
         const actionsEl = completionEl.createEl('div', { cls: 'flashcard-completion-actions' });
 
         new ButtonComponent(actionsEl)
@@ -440,7 +511,8 @@ export class FlashcardStudyModal extends Modal {
                     total: this.clippings.length,
                     correct: 0,
                     incorrect: 0,
-                    remaining: this.clippings.length
+                    remaining: this.clippings.length,
+                    reviewed: 0
                 };
 
                 // Recreate the UI from scratch (preserving bookTitle)

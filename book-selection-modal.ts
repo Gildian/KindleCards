@@ -1,6 +1,14 @@
 import { App, Modal, ButtonComponent, Notice } from 'obsidian';
 import { KindleClipping } from './main';
 import { FlashcardStudyModal } from './flashcard-modal';
+import { SpacedRepetitionSystem } from './spaced-repetition';
+
+// Forward declaration to avoid circular dependency
+interface KindleCardsPlugin {
+    spacedRepetition: any;
+    settings: any;
+    saveSettings(): Promise<void>;
+}
 
 export interface BookGroup {
     title: string;
@@ -12,10 +20,12 @@ export interface BookGroup {
 export class BookSelectionModal extends Modal {
     private bookGroups: BookGroup[];
     private originalClippings: KindleClipping[];
+    private plugin: KindleCardsPlugin | null;
 
-    constructor(app: App, clippings: KindleClipping[]) {
+    constructor(app: App, clippings: KindleClipping[], plugin?: KindleCardsPlugin) {
         super(app);
         this.originalClippings = clippings;
+        this.plugin = plugin || null;
         this.bookGroups = this.groupFlashcardsByBook(clippings);
     }
 
@@ -182,11 +192,29 @@ export class BookSelectionModal extends Modal {
             return;
         }
 
-        // Shuffle the cards for better studying
-        const shuffledClippings = this.shuffleArray([...clippings]);
+        // If spaced repetition is enabled, sort by priority, otherwise shuffle
+        let sortedClippings = clippings;
+        if (this.plugin?.settings?.enableSpacedRepetition && this.plugin.spacedRepetition) {
+            // Generate card IDs and sort by spaced repetition priority
+            const cardIds = clippings.map(clipping => 
+                SpacedRepetitionSystem.generateCardId(clipping.title, clipping.author, clipping.content)
+            );
+            const sortedIds = this.plugin.spacedRepetition.getSortedCards(cardIds);
+            
+            // Reorder clippings based on sorted IDs
+            const clippingMap = new Map();
+            clippings.forEach((clipping, index) => {
+                clippingMap.set(cardIds[index], clipping);
+            });
+            
+            sortedClippings = sortedIds.map((id: string) => clippingMap.get(id)).filter(Boolean);
+        } else {
+            // Shuffle the cards for traditional studying
+            sortedClippings = this.shuffleArray([...clippings]);
+        }
 
-        // Open the study modal with book context
-        const studyModal = new FlashcardStudyModal(this.app, shuffledClippings, bookTitle);
+        // Open the study modal with book context and plugin
+        const studyModal = new FlashcardStudyModal(this.app, sortedClippings, bookTitle, this.plugin);
         studyModal.open();
     }
 

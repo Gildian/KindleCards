@@ -3,17 +3,24 @@ import { KindleParser } from './kindle-parser';
 import { FlashcardGenerator } from './flashcard-generator';
 import { FlashcardStudyModal } from './flashcard-modal';
 import { BookSelectionModal } from './book-selection-modal';
+import { SpacedRepetitionSystem, CardReviewData } from './spaced-repetition';
 
 interface KindleCardsSettings {
 	kindlePath: string;
 	outputFolder: string;
 	cardTemplate: string;
+	spacedRepetitionData: Record<string, CardReviewData>;
+	enableSpacedRepetition: boolean;
+	newCardsPerDay: number;
 }
 
 const DEFAULT_SETTINGS: KindleCardsSettings = {
 	kindlePath: '',
 	outputFolder: 'KindleCards',
-	cardTemplate: '{{content}}\n\n**Source:** {{title}} by {{author}} - Page {{location}}'
+	cardTemplate: '{{content}}\n\n**Source:** {{title}} by {{author}} - Page {{location}}',
+	spacedRepetitionData: {},
+	enableSpacedRepetition: true,
+	newCardsPerDay: 20
 }
 
 export interface KindleClipping {
@@ -27,9 +34,13 @@ export interface KindleClipping {
 
 export default class KindleCardsPlugin extends Plugin {
 	settings: KindleCardsSettings;
+	spacedRepetition: SpacedRepetitionSystem;
 
 	async onload() {
 		await this.loadSettings();
+		
+		// Initialize spaced repetition system
+		this.spacedRepetition = new SpacedRepetitionSystem(this.settings.spacedRepetitionData);
 
 		// This creates a single icon in the left ribbon for both sync and study
 		const ribbonIconEl = this.addRibbonIcon('book-open', 'KindleCards', (evt: MouseEvent) => {
@@ -82,6 +93,15 @@ export default class KindleCardsPlugin extends Plugin {
 			}
 		});
 
+		// Open main modal command  
+		this.addCommand({
+			id: 'open-kindle-cards-main',
+			name: 'Open KindleCards Main Menu',
+			callback: () => {
+				this.openMainInterface();
+			}
+		});
+
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new KindleCardsSettingTab(this.app, this));
 	}
@@ -95,6 +115,8 @@ export default class KindleCardsPlugin extends Plugin {
 	}
 
 	async saveSettings() {
+		// Save spaced repetition data
+		this.settings.spacedRepetitionData = this.spacedRepetition.exportData();
 		await this.saveData(this.settings);
 	}
 
@@ -244,14 +266,45 @@ export default class KindleCardsPlugin extends Plugin {
 				return;
 			}
 
-			// Open the book selection modal
-			const bookSelectionModal = new BookSelectionModal(this.app, clippings);
+			// If spaced repetition is enabled, sort cards by priority
+			let sortedClippings = clippings;
+			if (this.settings.enableSpacedRepetition) {
+				// Generate card IDs for all clippings
+				const cardIds = clippings.map(clipping => 
+					SpacedRepetitionSystem.generateCardId(clipping.title, clipping.author, clipping.content)
+				);
+				
+				// Get sorted card IDs based on spaced repetition priority
+				const sortedIds = this.spacedRepetition.getSortedCards(cardIds);
+				
+				// Reorder clippings based on sorted IDs
+				const clippingMap = new Map();
+				clippings.forEach((clipping, index) => {
+					clippingMap.set(cardIds[index], clipping);
+				});
+				
+				sortedClippings = sortedIds.map(id => clippingMap.get(id)).filter(Boolean);
+				
+				// Show stats
+				const stats = this.spacedRepetition.getStats(cardIds);
+				new Notice(`Study Session: ${stats.due} due, ${stats.new} new, ${stats.learning} learning`);
+			} else {
+				// Shuffle the cards for traditional studying
+				sortedClippings = this.shuffleArray([...clippings]);
+			}
+
+			// Open the book selection modal with spaced repetition context
+			const bookSelectionModal = new BookSelectionModal(this.app, sortedClippings, this);
 			bookSelectionModal.open();
 
 		} catch (error) {
 			console.error('Error starting study session:', error);
 			new Notice('Error starting study session. Check console for details.');
 		}
+	}
+
+	openMainInterface() {
+		new Notice('KindleCards Main Menu - Feature coming soon! Use commands for now.');
 	}
 
 	async studyCurrentFolder() {
@@ -613,5 +666,55 @@ class KindleCardsSettingTab extends PluginSettingTab {
 					this.plugin.settings.cardTemplate = value;
 					await this.plugin.saveSettings();
 				}));
+
+		// Spaced Repetition Section
+		containerEl.createEl('h2', {text: 'Spaced Repetition'});
+
+		new Setting(containerEl)
+			.setName('Enable Spaced Repetition')
+			.setDesc('Use spaced repetition algorithm to optimize card review scheduling')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableSpacedRepetition)
+				.onChange(async (value) => {
+					this.plugin.settings.enableSpacedRepetition = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('New Cards Per Day')
+			.setDesc('Maximum number of new cards to introduce per day')
+			.addSlider(slider => slider
+				.setLimits(1, 50, 1)
+				.setValue(this.plugin.settings.newCardsPerDay)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.newCardsPerDay = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Show spaced repetition stats if enabled
+		if (this.plugin.settings.enableSpacedRepetition) {
+			const allCardIds = Object.keys(this.plugin.settings.spacedRepetitionData);
+			if (allCardIds.length > 0) {
+				const stats = this.plugin.spacedRepetition.getStats(allCardIds);
+				
+				containerEl.createEl('h3', {text: 'Review Statistics'});
+				
+				const statsContainer = containerEl.createEl('div', {cls: 'srs-stats-container'});
+				
+				const statsItems = [
+					{label: 'Total Cards', value: stats.total},
+					{label: 'Due Today', value: stats.due},
+					{label: 'New Cards', value: stats.new},
+					{label: 'Learning', value: stats.learning}
+				];
+
+				statsItems.forEach(stat => {
+					const statEl = statsContainer.createEl('div', {cls: 'srs-stat-item'});
+					statEl.createEl('span', {text: stat.value.toString(), cls: 'srs-stat-value'});
+					statEl.createEl('span', {text: stat.label, cls: 'srs-stat-label'});
+				});
+			}
+		}
 	}
 }

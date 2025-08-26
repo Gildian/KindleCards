@@ -213,10 +213,14 @@
 .flashcard-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     margin-bottom: 30px;
     padding-bottom: 20px;
     border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.flashcard-header-content {
+    flex: 1;
 }
 
 .flashcard-header h2 {
@@ -224,6 +228,27 @@
     color: var(--text-accent);
     font-size: 24px;
     font-weight: 600;
+}
+
+.flashcard-srs-indicator {
+    margin-top: 8px;
+}
+
+.srs-active-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    background-color: var(--color-blue);
+    color: white;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.srs-completion-info {
+    color: var(--color-blue) !important;
+    font-weight: 500;
 }
 
 .flashcard-close-btn {
@@ -453,6 +478,46 @@
 
 .flashcard-stat-total .stat-value {
     color: var(--text-normal);
+}
+
+.flashcard-stat-reviewed .stat-value {
+    color: var(--color-blue);
+}
+
+/* Spaced Repetition Settings */
+.srs-stats-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+    padding: 20px;
+    background-color: var(--background-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.srs-stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 10px;
+    border-radius: 6px;
+    background-color: var(--background-primary);
+}
+
+.srs-stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--interactive-accent);
+    margin-bottom: 5px;
+}
+
+.srs-stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 /* Completion Screen */
