@@ -352,6 +352,21 @@
     border-left: 4px solid var(--interactive-accent);
 }
 
+.flashcard-location {
+    margin-top: 15px;
+    text-align: center;
+    padding-top: 10px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.flashcard-location small {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .flashcard-metadata {
     text-align: center;
     padding: 20px 0;

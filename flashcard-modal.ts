@@ -165,6 +165,7 @@ export class FlashcardStudyModal extends Modal {
         }
 
         const currentClipping = this.clippings[this.currentIndex];
+        console.log('Full clipping object:', currentClipping);
         this.showingAnswer = true;
 
         // Show answer side (just the quote, clean and simple)
@@ -178,6 +179,22 @@ export class FlashcardStudyModal extends Modal {
         const cleanAnswer = this.cleanAnswer(answer || currentClipping.content);
         const contentEl = answerEl.createEl('div', { cls: 'flashcard-answer-content' });
         contentEl.createEl('p', { text: cleanAnswer });
+
+        // Add page/location information if available
+        console.log('Current clipping location:', currentClipping.location);
+        console.log('Location type:', typeof currentClipping.location);
+        
+        if (currentClipping.location && currentClipping.location !== 'Unknown' && currentClipping.location !== 'N/A' && currentClipping.location !== '') {
+            console.log('Adding location element for:', currentClipping.location);
+            const locationEl = answerEl.createEl('div', { cls: 'flashcard-location' });
+            locationEl.createEl('small', { text: `Page ${currentClipping.location}` });
+        } else {
+            // Fallback: show source book and author if no page number
+            console.log('No valid location, showing book info instead');
+            const sourceEl = answerEl.createEl('div', { cls: 'flashcard-location' });
+            const bookInfo = `${currentClipping.title}${currentClipping.author && currentClipping.author !== 'Unknown Author' ? ' by ' + currentClipping.author : ''}`;
+            sourceEl.createEl('small', { text: bookInfo });
+        }
 
         this.updateControlsState();
     }

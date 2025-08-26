@@ -325,6 +325,8 @@ export default class KindleCardsPlugin extends Plugin {
 				// Also try to extract author from embedded metadata in content
 				const contentAuthorMatch = content.match(/\*\*Author:\*\*\s*([^\n\*]+)/i);
 				const contentBookMatch = content.match(/\*\*Book:\*\*\s*([^\n\*]+)/i);
+				const contentLocationMatch = content.match(/\*\*(?:Location|Page):\*\*\s*([^\n\*]+)/i) || 
+											 content.match(/(?:Location|Page)\s*(\d+(?:-\d+)?)/i);
 
 				// Strip common labels/metadata from the front text
 				mainContent = mainContent
@@ -381,16 +383,19 @@ export default class KindleCardsPlugin extends Plugin {
 				if (contentBookMatch) {
 					title = contentBookMatch[1].trim();
 				}
+				if (contentLocationMatch) {
+					location = contentLocationMatch[1].trim();
+				}
 			} else {
 				// No source line found, use entire content and try to extract metadata from it
 				const fullContent = content;
-
+				
 				// Try to extract author from embedded **Author:** pattern in content
 				const authorMatch = fullContent.match(/\*\*Author:\*\*\s*([^\n\*]+)/i);
 				if (authorMatch) {
 					author = authorMatch[1].trim();
 				}
-
+				
 				// Try to extract title from embedded **Book:** pattern in content
 				const bookMatch = fullContent.match(/\*\*Book:\*\*\s*([^\n\*]+)/i);
 				if (bookMatch) {
@@ -399,7 +404,14 @@ export default class KindleCardsPlugin extends Plugin {
 					// Try to get title from filename as fallback
 					title = file.basename.replace(/^\d+\s*-\s*/, '').replace(/\s*-\s*\d+.*$/, '') || 'Custom Flashcard';
 				}
-
+				
+				// Try to extract location from embedded **Location:** or **Page:** pattern in content
+				const locationMatch = fullContent.match(/\*\*(?:Location|Page):\*\*\s*([^\n\*]+)/i) || 
+									  fullContent.match(/(?:Location|Page)\s*(\d+(?:-\d+)?)/i);
+				if (locationMatch) {
+					location = locationMatch[1].trim();
+				}
+				
 				// Clean the main content by removing all metadata
 				mainContent = fullContent
 					.split('\n')
@@ -416,9 +428,7 @@ export default class KindleCardsPlugin extends Plugin {
 					.replace(/\s+/g, ' ')
 					.replace(/^\"|\"$/g, '')
 					.trim();
-			}
-
-			console.log('Parsed flashcard:', { title, author, location, content: mainContent });
+			}			console.log('Parsed flashcard:', { title, author, location, content: mainContent });
 
 			// Return null if we don't have meaningful content
 			if (!mainContent || mainContent.length < 3) {
