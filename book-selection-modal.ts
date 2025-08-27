@@ -1,28 +1,15 @@
 import { App, Modal, ButtonComponent, Notice } from 'obsidian';
-import { KindleClipping } from './main';
 import { FlashcardStudyModal } from './flashcard-modal';
 import { SpacedRepetitionSystem } from './spaced-repetition';
-
-// Forward declaration to avoid circular dependency
-interface KindleCardsPlugin {
-    spacedRepetition: any;
-    settings: any;
-    saveSettings(): Promise<void>;
-}
-
-export interface BookGroup {
-    title: string;
-    author: string;
-    flashcards: KindleClipping[];
-    count: number;
-}
+import { KindleClipping, BookGroup, IKindleCardsPlugin } from './types';
+import { DebugLogger } from './logger';
 
 export class BookSelectionModal extends Modal {
     private bookGroups: BookGroup[];
     private originalClippings: KindleClipping[];
-    private plugin: KindleCardsPlugin | null;
+    private plugin: IKindleCardsPlugin | null;
 
-    constructor(app: App, clippings: KindleClipping[], plugin?: KindleCardsPlugin) {
+    constructor(app: App, clippings: KindleClipping[], plugin?: IKindleCardsPlugin) {
         super(app);
         this.originalClippings = clippings;
         this.plugin = plugin || null;
@@ -66,37 +53,32 @@ export class BookSelectionModal extends Modal {
             return a.title.localeCompare(b.title);
         });
 
-        sortedBooks.forEach(book => {
-            const bookItem = listContainer.createEl('div', { cls: 'book-item' });
+        this.bookGroups.forEach(book => {
+            const bookEl = listContainer.createEl('div', { cls: 'book-item' });
+            const bookInfo = bookEl.createEl('div', { cls: 'book-info' });
 
-            const bookInfo = bookItem.createEl('div', { cls: 'book-info' });
+            // Title
+            bookInfo.createEl('div', {
+                text: book.title,
+                cls: 'book-title'
+            });
 
-            const titleEl = bookInfo.createEl('div', { cls: 'book-title' });
-            titleEl.textContent = book.title || 'Unknown Book';
-
-            const authorEl = bookInfo.createEl('div', { cls: 'book-author' });
-
-            console.log('Displaying book:', book.title, 'with author:', book.author);
-
-            // Show author if it exists and isn't one of the "unknown" variants
-            if (book.author &&
-                book.author.trim() &&
-                book.author !== 'Unknown Author' &&
-                book.author.toLowerCase() !== 'unknown' &&
-                book.author.toLowerCase() !== 'unknown author') {
-                authorEl.textContent = `by ${book.author}`;
-                console.log('Showing author:', book.author);
-            } else {
-                // For truly unknown authors, just leave it blank
-                authorEl.textContent = '';
-                authorEl.style.display = 'none';
-                console.log('Hiding author for:', book.title, 'author was:', book.author);
+            // Author (only if not empty)
+            if (book.author && book.author.trim()) {
+                bookInfo.createEl('div', {
+                    text: `by ${book.author}`,
+                    cls: 'book-author'
+                });
             }
 
-            const countEl = bookInfo.createEl('div', { cls: 'book-count' });
-            countEl.textContent = `${book.count} flashcard${book.count === 1 ? '' : 's'}`;
+            // Flashcard count
+            bookInfo.createEl('div', {
+                text: `${book.count} flashcards`,
+                cls: 'book-count'
+            });
 
-            const studyButton = new ButtonComponent(bookItem)
+            // Study button
+            new ButtonComponent(bookEl)
                 .setButtonText('Study')
                 .setCta()
                 .onClick(() => {
@@ -126,22 +108,11 @@ export class BookSelectionModal extends Modal {
         const bookMap = new Map<string, BookGroup>();
 
         clippings.forEach(clipping => {
-            // Debug logging
-            console.log('Processing clipping:', {
-                title: clipping.title,
-                author: clipping.author,
-                authorType: typeof clipping.author,
-                authorLength: clipping.author?.length
-            });
-
             const bookKey = this.getBookKey(clipping);
 
             if (!bookMap.has(bookKey)) {
                 // Clean up the author field, but preserve valid authors
                 let cleanAuthor = (clipping.author || '').trim();
-
-                console.log('Original author:', clipping.author);
-                console.log('Clean author before filtering:', cleanAuthor);
 
                 // Only clear if it's explicitly unknown
                 if (cleanAuthor === 'Unknown' ||
@@ -149,9 +120,6 @@ export class BookSelectionModal extends Modal {
                     cleanAuthor.toLowerCase() === 'unknown author' ||
                     cleanAuthor.toLowerCase() === 'unknown') {
                     cleanAuthor = '';
-                    console.log('Cleared unknown author');
-                } else {
-                    console.log('Keeping author:', cleanAuthor);
                 }
 
                 bookMap.set(bookKey, {
@@ -168,7 +136,7 @@ export class BookSelectionModal extends Modal {
         });
 
         const result = Array.from(bookMap.values());
-        console.log('Final book groups:', result);
+        DebugLogger.log('Grouped clippings into', result.length, 'books');
         return result;
     }    private getBookKey(clipping: KindleClipping): string {
         // Create a unique key for each book based on title and author
@@ -196,17 +164,17 @@ export class BookSelectionModal extends Modal {
         let sortedClippings = clippings;
         if (this.plugin?.settings?.enableSpacedRepetition && this.plugin.spacedRepetition) {
             // Generate card IDs and sort by spaced repetition priority
-            const cardIds = clippings.map(clipping => 
+            const cardIds = clippings.map(clipping =>
                 SpacedRepetitionSystem.generateCardId(clipping.title, clipping.author, clipping.content)
             );
             const sortedIds = this.plugin.spacedRepetition.getSortedCards(cardIds);
-            
+
             // Reorder clippings based on sorted IDs
             const clippingMap = new Map();
             clippings.forEach((clipping, index) => {
                 clippingMap.set(cardIds[index], clipping);
             });
-            
+
             sortedClippings = sortedIds.map((id: string) => clippingMap.get(id)).filter(Boolean);
         } else {
             // Shuffle the cards for traditional studying

@@ -1,4 +1,4 @@
-import { KindleClipping } from './main';
+import { KindleClipping } from './types';
 
 export class KindleParser {
     static parseClippings(content: string): KindleClipping[] {

@@ -3,16 +3,9 @@ import { KindleParser } from './kindle-parser';
 import { FlashcardGenerator } from './flashcard-generator';
 import { FlashcardStudyModal } from './flashcard-modal';
 import { BookSelectionModal } from './book-selection-modal';
-import { SpacedRepetitionSystem, CardReviewData } from './spaced-repetition';
-
-interface KindleCardsSettings {
-	kindlePath: string;
-	outputFolder: string;
-	cardTemplate: string;
-	spacedRepetitionData: Record<string, CardReviewData>;
-	enableSpacedRepetition: boolean;
-	newCardsPerDay: number;
-}
+import { SpacedRepetitionSystem } from './spaced-repetition';
+import { KindleClipping, KindleCardsSettings, CardReviewData } from './types';
+import { DebugLogger } from './logger';
 
 const DEFAULT_SETTINGS: KindleCardsSettings = {
 	kindlePath: '',
@@ -21,16 +14,7 @@ const DEFAULT_SETTINGS: KindleCardsSettings = {
 	spacedRepetitionData: {},
 	enableSpacedRepetition: true,
 	newCardsPerDay: 20
-}
-
-export interface KindleClipping {
-	title: string;
-	author: string;
-	type: string;
-	location: string;
-	date: string;
-	content: string;
-}
+};
 
 export default class KindleCardsPlugin extends Plugin {
 	settings: KindleCardsSettings;
@@ -38,7 +22,10 @@ export default class KindleCardsPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		
+
+		// Initialize debug logging (can be enabled via console: DebugLogger.enableDebug())
+		DebugLogger.log('KindleCards plugin loaded');
+
 		// Initialize spaced repetition system
 		this.spacedRepetition = new SpacedRepetitionSystem(this.settings.spacedRepetitionData);
 
@@ -93,7 +80,7 @@ export default class KindleCardsPlugin extends Plugin {
 			}
 		});
 
-		// Open main modal command  
+		// Open main modal command
 		this.addCommand({
 			id: 'open-kindle-cards-main',
 			name: 'Open KindleCards Main Menu',
@@ -171,21 +158,20 @@ export default class KindleCardsPlugin extends Plugin {
 				input.onchange = (e) => {
 					const file = (e.target as HTMLInputElement).files?.[0];
 					if (file) {
-						console.log('Selected file:', file.name, 'Size:', file.size);
+						DebugLogger.log('Selected file:', file.name, 'Size:', file.size);
 						const reader = new FileReader();
 						reader.onload = (e) => {
 							const content = e.target?.result as string;
-							console.log('File content length:', content?.length);
-							console.log('File content preview:', content?.substring(0, 200));
+							DebugLogger.log('File content length:', content?.length);
 							resolve(content);
 						};
 						reader.onerror = (e) => {
-							console.error('Error reading file:', e);
+							DebugLogger.error('Error reading file:', e);
 							resolve(null);
 						};
 						reader.readAsText(file);
 					} else {
-						console.log('No file selected');
+						DebugLogger.log('No file selected');
 						resolve(null);
 					}
 				};
@@ -256,7 +242,7 @@ export default class KindleCardsPlugin extends Plugin {
 		}
 	}
 
-	async startStudySession() {
+	async startStudySession(): Promise<void> {
 		try {
 			// Get all flashcards from the output folder
 			const clippings = await this.loadFlashcardsFromFolder(this.settings.outputFolder);
@@ -266,40 +252,69 @@ export default class KindleCardsPlugin extends Plugin {
 				return;
 			}
 
-			// If spaced repetition is enabled, sort cards by priority
-			let sortedClippings = clippings;
-			if (this.settings.enableSpacedRepetition) {
-				// Generate card IDs for all clippings
-				const cardIds = clippings.map(clipping => 
-					SpacedRepetitionSystem.generateCardId(clipping.title, clipping.author, clipping.content)
-				);
-				
-				// Get sorted card IDs based on spaced repetition priority
-				const sortedIds = this.spacedRepetition.getSortedCards(cardIds);
-				
-				// Reorder clippings based on sorted IDs
-				const clippingMap = new Map();
-				clippings.forEach((clipping, index) => {
-					clippingMap.set(cardIds[index], clipping);
-				});
-				
-				sortedClippings = sortedIds.map(id => clippingMap.get(id)).filter(Boolean);
-				
-				// Show stats
-				const stats = this.spacedRepetition.getStats(cardIds);
-				new Notice(`Study Session: ${stats.due} due, ${stats.new} new, ${stats.learning} learning`);
-			} else {
-				// Shuffle the cards for traditional studying
-				sortedClippings = this.shuffleArray([...clippings]);
-			}
+			// Apply spaced repetition sorting if enabled
+			const sortedClippings = this.applySRSSorting(clippings);
 
-			// Open the book selection modal with spaced repetition context
+			// Open the book selection modal with sorted clippings
 			const bookSelectionModal = new BookSelectionModal(this.app, sortedClippings, this);
 			bookSelectionModal.open();
 
 		} catch (error) {
 			console.error('Error starting study session:', error);
 			new Notice('Error starting study session. Check console for details.');
+		}
+	}
+
+	/**
+	 * Apply spaced repetition sorting to clippings if enabled
+	 */
+	private applySRSSorting(clippings: KindleClipping[]): KindleClipping[] {
+		if (!this.settings.enableSpacedRepetition || !this.spacedRepetition) {
+			return this.shuffleArray([...clippings]);
+		}
+
+		try {
+			// Generate card IDs for all clippings
+			const cardIds = clippings.map(clipping => {
+				try {
+					return SpacedRepetitionSystem.generateCardId(clipping.title, clipping.author, clipping.content);
+				} catch (error) {
+					console.warn('Failed to generate card ID for clipping:', clipping.title, error);
+					return null;
+				}
+			}).filter((id): id is string => id !== null);
+
+			if (cardIds.length === 0) {
+				new Notice('Warning: Could not process clippings for spaced repetition. Using random order.');
+				return this.shuffleArray([...clippings]);
+			}
+
+			// Get sorted card IDs based on spaced repetition priority
+			const sortedIds = this.spacedRepetition.getSortedCards(cardIds);
+
+			// Create mapping for reordering
+			const clippingMap = new Map<string, KindleClipping>();
+			clippings.forEach((clipping, index) => {
+				if (index < cardIds.length && cardIds[index]) {
+					clippingMap.set(cardIds[index], clipping);
+				}
+			});
+
+			// Reorder clippings based on sorted IDs
+			const sortedClippings = sortedIds
+				.map(id => clippingMap.get(id))
+				.filter((clipping): clipping is KindleClipping => clipping !== undefined);
+
+			// Show stats
+			const stats = this.spacedRepetition.getStats(cardIds);
+			new Notice(`Study Session: ${stats.due} due, ${stats.new} new, ${stats.learning} learning`);
+
+			return sortedClippings;
+
+		} catch (error) {
+			console.error('Error applying SRS sorting:', error);
+			new Notice('Warning: Spaced repetition sorting failed. Using random order.');
+			return this.shuffleArray([...clippings]);
 		}
 	}
 
@@ -378,7 +393,7 @@ export default class KindleCardsPlugin extends Plugin {
 				// Also try to extract author from embedded metadata in content
 				const contentAuthorMatch = content.match(/\*\*Author:\*\*\s*([^\n\*]+)/i);
 				const contentBookMatch = content.match(/\*\*Book:\*\*\s*([^\n\*]+)/i);
-				const contentLocationMatch = content.match(/\*\*(?:Location|Page):\*\*\s*([^\n\*]+)/i) || 
+				const contentLocationMatch = content.match(/\*\*(?:Location|Page):\*\*\s*([^\n\*]+)/i) ||
 											 content.match(/(?:Location|Page)\s*(\d+(?:-\d+)?)/i);
 
 				// Strip common labels/metadata from the front text
@@ -400,7 +415,7 @@ export default class KindleCardsPlugin extends Plugin {
 
 				// Parse the source line
 				const sourceLine = lines[sourceLineIndex].trim();
-				console.log('Parsing source line:', sourceLine);
+				DebugLogger.log('Parsing source line:', sourceLine);
 
 				// Pattern: **Source:** Title by Author - Page Location
 				const fullMatch = sourceLine.match(/\*\*Source:\*\*\s*(.+?)\s+by\s+(.+?)\s*-\s*Page\s*(.+)/);
@@ -442,13 +457,13 @@ export default class KindleCardsPlugin extends Plugin {
 			} else {
 				// No source line found, use entire content and try to extract metadata from it
 				const fullContent = content;
-				
+
 				// Try to extract author from embedded **Author:** pattern in content
 				const authorMatch = fullContent.match(/\*\*Author:\*\*\s*([^\n\*]+)/i);
 				if (authorMatch) {
 					author = authorMatch[1].trim();
 				}
-				
+
 				// Try to extract title from embedded **Book:** pattern in content
 				const bookMatch = fullContent.match(/\*\*Book:\*\*\s*([^\n\*]+)/i);
 				if (bookMatch) {
@@ -457,14 +472,14 @@ export default class KindleCardsPlugin extends Plugin {
 					// Try to get title from filename as fallback
 					title = file.basename.replace(/^\d+\s*-\s*/, '').replace(/\s*-\s*\d+.*$/, '') || 'Custom Flashcard';
 				}
-				
+
 				// Try to extract location from embedded **Location:** or **Page:** pattern in content
-				const locationMatch = fullContent.match(/\*\*(?:Location|Page):\*\*\s*([^\n\*]+)/i) || 
+				const locationMatch = fullContent.match(/\*\*(?:Location|Page):\*\*\s*([^\n\*]+)/i) ||
 									  fullContent.match(/(?:Location|Page)\s*(\d+(?:-\d+)?)/i);
 				if (locationMatch) {
 					location = locationMatch[1].trim();
 				}
-				
+
 				// Clean the main content by removing all metadata
 				mainContent = fullContent
 					.split('\n')
@@ -481,7 +496,9 @@ export default class KindleCardsPlugin extends Plugin {
 					.replace(/\s+/g, ' ')
 					.replace(/^\"|\"$/g, '')
 					.trim();
-			}			console.log('Parsed flashcard:', { title, author, location, content: mainContent });
+			}
+
+			DebugLogger.log('Parsed flashcard:', { title, author, location, content: mainContent });
 
 			// Return null if we don't have meaningful content
 			if (!mainContent || mainContent.length < 3) {
@@ -697,11 +714,11 @@ class KindleCardsSettingTab extends PluginSettingTab {
 			const allCardIds = Object.keys(this.plugin.settings.spacedRepetitionData);
 			if (allCardIds.length > 0) {
 				const stats = this.plugin.spacedRepetition.getStats(allCardIds);
-				
+
 				containerEl.createEl('h3', {text: 'Review Statistics'});
-				
+
 				const statsContainer = containerEl.createEl('div', {cls: 'srs-stats-container'});
-				
+
 				const statsItems = [
 					{label: 'Total Cards', value: stats.total},
 					{label: 'Due Today', value: stats.due},

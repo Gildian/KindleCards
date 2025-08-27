@@ -1,27 +1,15 @@
 import { App, Modal, Notice, ButtonComponent } from 'obsidian';
-import { KindleClipping } from './main';
 import { SpacedRepetitionSystem } from './spaced-repetition';
-
-// Forward declaration to avoid circular dependency
-interface KindleCardsPlugin {
-    spacedRepetition: any;
-    settings: any;
-    saveSettings(): Promise<void>;
-}
+import { KindleClipping, StudyStats, IKindleCardsPlugin } from './types';
+import { DebugLogger } from './logger';
 
 export class FlashcardStudyModal extends Modal {
     private clippings: KindleClipping[];
     private currentIndex: number = 0;
     private showingAnswer: boolean = false;
     private bookTitle?: string;
-    private plugin: KindleCardsPlugin | null;
-    private studyStats: {
-        total: number;
-        correct: number;
-        incorrect: number;
-        remaining: number;
-        reviewed: number;
-    };
+    private plugin: IKindleCardsPlugin | null;
+    private studyStats: StudyStats;
 
     // UI Elements
     private cardContent: HTMLElement;
@@ -34,7 +22,7 @@ export class FlashcardStudyModal extends Modal {
     private incorrectButton: ButtonComponent;
     private statsElement: HTMLElement;
 
-    constructor(app: App, clippings: KindleClipping[], bookTitle?: string, plugin?: KindleCardsPlugin) {
+    constructor(app: App, clippings: KindleClipping[], bookTitle?: string, plugin?: IKindleCardsPlugin) {
         super(app);
         this.clippings = clippings;
         this.bookTitle = bookTitle;
@@ -75,7 +63,7 @@ export class FlashcardStudyModal extends Modal {
         // Spaced repetition indicator
         if (this.plugin?.settings?.enableSpacedRepetition) {
             const srsIndicator = headerContent.createEl('div', { cls: 'flashcard-srs-indicator' });
-            srsIndicator.createEl('span', { 
+            srsIndicator.createEl('span', {
                 text: '🧠 Spaced Repetition Active',
                 cls: 'srs-active-badge'
             });
@@ -188,7 +176,7 @@ export class FlashcardStudyModal extends Modal {
         }
 
         const currentClipping = this.clippings[this.currentIndex];
-        console.log('Full clipping object:', currentClipping);
+        DebugLogger.log('Displaying answer for:', currentClipping.title);
         this.showingAnswer = true;
 
         // Show answer side (just the quote, clean and simple)
@@ -204,16 +192,11 @@ export class FlashcardStudyModal extends Modal {
         contentEl.createEl('p', { text: cleanAnswer });
 
         // Add page/location information if available
-        console.log('Current clipping location:', currentClipping.location);
-        console.log('Location type:', typeof currentClipping.location);
-        
         if (currentClipping.location && currentClipping.location !== 'Unknown' && currentClipping.location !== 'N/A' && currentClipping.location !== '') {
-            console.log('Adding location element for:', currentClipping.location);
             const locationEl = answerEl.createEl('div', { cls: 'flashcard-location' });
             locationEl.createEl('small', { text: `Page ${currentClipping.location}` });
         } else {
             // Fallback: show source book and author if no page number
-            console.log('No valid location, showing book info instead');
             const sourceEl = answerEl.createEl('div', { cls: 'flashcard-location' });
             const bookInfo = `${currentClipping.title}${currentClipping.author && currentClipping.author !== 'Unknown Author' ? ' by ' + currentClipping.author : ''}`;
             sourceEl.createEl('small', { text: bookInfo });
@@ -492,7 +475,7 @@ export class FlashcardStudyModal extends Modal {
 
         // Add spaced repetition summary if enabled
         if (this.plugin?.settings?.enableSpacedRepetition && this.studyStats.reviewed > 0) {
-            resultsEl.createEl('p', { 
+            resultsEl.createEl('p', {
                 text: `Spaced Repetition: ${this.studyStats.reviewed} cards reviewed and rescheduled`,
                 cls: 'srs-completion-info'
             });
