@@ -28,7 +28,7 @@ export class BookSelectionModal extends Modal {
     private createHeader() {
         const headerEl = this.contentEl.createEl('div', { cls: 'book-selection-header' });
 
-        headerEl.createEl('h2', { text: '📚 Select Books to Study' });
+        headerEl.createEl('h2', { text: 'Select Books to Study' });
         headerEl.createEl('p', {
             text: `Found ${this.originalClippings.length} flashcards from ${this.bookGroups.length} books`,
             cls: 'book-selection-subtitle'

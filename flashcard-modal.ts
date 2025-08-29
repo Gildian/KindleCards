@@ -64,7 +64,7 @@ export class FlashcardStudyModal extends Modal {
         if (this.plugin?.settings?.enableSpacedRepetition) {
             const srsIndicator = headerContent.createEl('div', { cls: 'flashcard-srs-indicator' });
             srsIndicator.createEl('span', {
-                text: '🧠 Spaced Repetition Active',
+                text: 'Spaced Repetition Active',
                 cls: 'srs-active-badge'
             });
         }
@@ -461,7 +461,7 @@ export class FlashcardStudyModal extends Modal {
         this.contentEl.empty();
 
         const completionEl = this.contentEl.createEl('div', { cls: 'flashcard-completion' });
-        completionEl.createEl('h2', { text: '🎉 Study Session Complete!' });
+        completionEl.createEl('h2', { text: 'Study Session Complete!' });
 
         const resultsEl = completionEl.createEl('div', { cls: 'flashcard-results' });
 

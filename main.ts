@@ -599,7 +599,7 @@ class KindleCardsMainModal extends Modal {
 
 		// Sync Section
 		const syncSection = contentEl.createDiv('kindle-cards-main-section');
-		syncSection.createEl('h3', { text: '📖 Sync Kindle Highlights' });
+		syncSection.createEl('h3', { text: 'Sync Kindle Highlights' });
 		syncSection.createEl('p', {
 			text: 'Import highlights from your Kindle\'s My_Clippings.txt file and convert them into flashcards.',
 			cls: 'kindle-cards-section-desc'
@@ -616,7 +616,7 @@ class KindleCardsMainModal extends Modal {
 
 		// Study Section
 		const studySection = contentEl.createDiv('kindle-cards-main-section');
-		studySection.createEl('h3', { text: '🧠 Study Flashcards' });
+		studySection.createEl('h3', { text: 'Study Flashcards' });
 		studySection.createEl('p', {
 			text: 'Review your flashcards in an interactive study session with spaced repetition.',
 			cls: 'kindle-cards-section-desc'
