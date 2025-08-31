@@ -35,6 +35,16 @@ export interface KindleCardsSettings {
 	spacedRepetitionData: Record<string, CardReviewData>;
 	enableSpacedRepetition: boolean;
 	newCardsPerDay: number;
+	// Advanced SRS Settings
+	initialEaseFactor: number;
+	minimumEaseFactor: number;
+	maximumInterval: number;
+	easeBonus: number;
+	hardPenalty: number;
+	againPenalty: number;
+	graduatingInterval: number;
+	easyInterval: number;
+	maximumReviewsPerDay: number;
 }
 
 export interface BookGroup {

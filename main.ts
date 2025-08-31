@@ -13,7 +13,17 @@ const DEFAULT_SETTINGS: KindleCardsSettings = {
 	cardTemplate: '{{content}}\n\n**Source:** {{title}} by {{author}} - Page {{location}}',
 	spacedRepetitionData: {},
 	enableSpacedRepetition: true,
-	newCardsPerDay: 20
+	newCardsPerDay: 20,
+	// Advanced SRS Settings
+	initialEaseFactor: 2.5,
+	minimumEaseFactor: 1.3,
+	maximumInterval: 365,
+	easeBonus: 0.15,
+	hardPenalty: 0.15,
+	againPenalty: 0.2,
+	graduatingInterval: 1,
+	easyInterval: 4,
+	maximumReviewsPerDay: 100
 };
 
 export default class KindleCardsPlugin extends Plugin {
@@ -27,7 +37,7 @@ export default class KindleCardsPlugin extends Plugin {
 		DebugLogger.log('KindleCards plugin loaded');
 
 		// Initialize spaced repetition system
-		this.spacedRepetition = new SpacedRepetitionSystem(this.settings.spacedRepetitionData);
+		this.spacedRepetition = new SpacedRepetitionSystem(this.settings.spacedRepetitionData, this.settings);
 
 		// This creates a single icon in the left ribbon for both sync and study
 		const ribbonIconEl = this.addRibbonIcon('book-open', 'KindleCards', (evt: MouseEvent) => {
@@ -105,6 +115,10 @@ export default class KindleCardsPlugin extends Plugin {
 		// Save spaced repetition data
 		this.settings.spacedRepetitionData = this.spacedRepetition.exportData();
 		await this.saveData(this.settings);
+		// Update the spaced repetition system with new settings
+		if (this.spacedRepetition) {
+			this.spacedRepetition.updateSettings(this.settings);
+		}
 	}
 
 	openKindleCardsInterface() {
@@ -707,6 +721,148 @@ class KindleCardsSettingTab extends PluginSettingTab {
 				.onChange(async (value) => {
 					this.plugin.settings.newCardsPerDay = value;
 					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Maximum Reviews Per Day')
+			.setDesc('Maximum number of review cards to show per day (0 = unlimited)')
+			.addSlider(slider => slider
+				.setLimits(0, 200, 5)
+				.setValue(this.plugin.settings.maximumReviewsPerDay)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.maximumReviewsPerDay = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Advanced SRS Settings
+		containerEl.createEl('h3', {text: 'Advanced Settings'});
+
+		containerEl.createEl('p', {
+			text: 'These settings control the spaced repetition algorithm. Adjust carefully as changes affect learning efficiency.',
+			cls: 'setting-item-description'
+		});
+
+		new Setting(containerEl)
+			.setName('Initial Ease Factor')
+			.setDesc('Starting ease multiplier for new cards (higher = longer intervals)')
+			.addSlider(slider => slider
+				.setLimits(1.3, 4.0, 0.1)
+				.setValue(this.plugin.settings.initialEaseFactor)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.initialEaseFactor = Math.round(value * 10) / 10;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Minimum Ease Factor')
+			.setDesc('Lowest possible ease factor (prevents cards from becoming too difficult)')
+			.addSlider(slider => slider
+				.setLimits(1.0, 2.0, 0.1)
+				.setValue(this.plugin.settings.minimumEaseFactor)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.minimumEaseFactor = Math.round(value * 10) / 10;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Maximum Interval (days)')
+			.setDesc('Longest possible interval between reviews')
+			.addSlider(slider => slider
+				.setLimits(30, 3650, 10)
+				.setValue(this.plugin.settings.maximumInterval)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.maximumInterval = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Easy Bonus')
+			.setDesc('Ease factor increase for easy answers')
+			.addSlider(slider => slider
+				.setLimits(0.0, 0.5, 0.05)
+				.setValue(this.plugin.settings.easeBonus)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.easeBonus = Math.round(value * 100) / 100;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Hard Penalty')
+			.setDesc('Ease factor decrease for hard answers')
+			.addSlider(slider => slider
+				.setLimits(0.0, 0.5, 0.05)
+				.setValue(this.plugin.settings.hardPenalty)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.hardPenalty = Math.round(value * 100) / 100;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Again Penalty')
+			.setDesc('Ease factor decrease for failed answers')
+			.addSlider(slider => slider
+				.setLimits(0.1, 0.5, 0.05)
+				.setValue(this.plugin.settings.againPenalty)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.againPenalty = Math.round(value * 100) / 100;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Graduating Interval (days)')
+			.setDesc('Interval for new cards that graduate from learning')
+			.addSlider(slider => slider
+				.setLimits(1, 7, 1)
+				.setValue(this.plugin.settings.graduatingInterval)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.graduatingInterval = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Easy Interval (days)')
+			.setDesc('Interval for cards answered as easy in learning phase')
+			.addSlider(slider => slider
+				.setLimits(2, 14, 1)
+				.setValue(this.plugin.settings.easyInterval)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.easyInterval = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Reset to defaults button
+		new Setting(containerEl)
+			.setName('Reset to Defaults')
+			.setDesc('Reset all spaced repetition settings to their default values')
+			.addButton(button => button
+				.setButtonText('Reset SRS Settings')
+				.setWarning()
+				.onClick(async () => {
+					// Reset SRS settings to defaults
+					this.plugin.settings.initialEaseFactor = 2.5;
+					this.plugin.settings.minimumEaseFactor = 1.3;
+					this.plugin.settings.maximumInterval = 365;
+					this.plugin.settings.easeBonus = 0.15;
+					this.plugin.settings.hardPenalty = 0.15;
+					this.plugin.settings.againPenalty = 0.2;
+					this.plugin.settings.graduatingInterval = 1;
+					this.plugin.settings.easyInterval = 4;
+					this.plugin.settings.maximumReviewsPerDay = 100;
+					this.plugin.settings.newCardsPerDay = 20;
+
+					await this.plugin.saveSettings();
+
+					// Refresh the display
+					this.display();
 				}));
 
 		// Show spaced repetition stats if enabled

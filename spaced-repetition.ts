@@ -1,4 +1,4 @@
-import { CardReviewData, ReviewResult, SpacedRepetitionStats } from './types';
+import { CardReviewData, ReviewResult, SpacedRepetitionStats, KindleCardsSettings } from './types';
 
 /**
  * Spaced Repetition System using SM-2 Algorithm
@@ -8,9 +8,27 @@ import { CardReviewData, ReviewResult, SpacedRepetitionStats } from './types';
  */
 export class SpacedRepetitionSystem {
     private reviewData: Map<string, CardReviewData> = new Map();
+    private settings: KindleCardsSettings;
 
-    constructor(savedData?: Record<string, CardReviewData>) {
+    constructor(savedData?: Record<string, CardReviewData>, settings?: KindleCardsSettings) {
+        this.settings = settings || {
+            initialEaseFactor: 2.5,
+            minimumEaseFactor: 1.3,
+            maximumInterval: 365,
+            easeBonus: 0.15,
+            hardPenalty: 0.15,
+            againPenalty: 0.2,
+            graduatingInterval: 1,
+            easyInterval: 4,
+        } as KindleCardsSettings;
         this.loadData(savedData);
+    }
+
+    /**
+     * Update the settings used by the SRS system
+     */
+    updateSettings(settings: KindleCardsSettings): void {
+        this.settings = settings;
     }
 
     /**
@@ -48,8 +66,8 @@ export class SpacedRepetitionSystem {
     private createNewCardData(cardId: string): CardReviewData {
         return {
             cardId,
-            easeFactor: 2.5,
-            interval: 1,
+            easeFactor: this.settings.initialEaseFactor || 2.5,
+            interval: this.settings.graduatingInterval || 1,
             repetitions: 0,
             nextReview: new Date(),
             lastReviewed: new Date(0),
@@ -92,24 +110,38 @@ export class SpacedRepetitionSystem {
         data.correctStreak++;
         data.repetitions++;
 
-        // Update difficulty stage
+        // Update difficulty stage and intervals
         if (data.difficulty === 'new') {
             data.difficulty = 'learning';
-            data.interval = 1;
+            data.interval = this.settings.graduatingInterval || 1;
         } else if (data.difficulty === 'learning' && data.repetitions >= 2) {
             data.difficulty = 'review';
-            data.interval = 6;
+            data.interval = this.settings.easyInterval || 4;
         } else if (data.difficulty === 'review') {
             // SM-2 algorithm for mature cards
-            data.interval = Math.ceil(data.interval * data.easeFactor);
+            const newInterval = Math.ceil(data.interval * data.easeFactor);
+            data.interval = Math.min(newInterval, this.settings.maximumInterval || 365);
         } else {
             // Still in learning phase
-            data.interval = Math.min(data.interval + 1, 6);
+            data.interval = Math.min(data.interval + 1, this.settings.easyInterval || 4);
         }
 
-        // Update ease factor using SM-2 formula
-        data.easeFactor = Math.max(1.3,
-            data.easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
+        // Update ease factor using configurable bonuses
+        let easeChange = 0;
+        if (quality === 5) {
+            // Easy answer - apply bonus
+            easeChange = this.settings.easeBonus || 0.15;
+        } else if (quality === 4) {
+            // Good answer - slight bonus
+            easeChange = (this.settings.easeBonus || 0.15) * 0.5;
+        } else if (quality === 3) {
+            // Hard answer - apply penalty
+            easeChange = -(this.settings.hardPenalty || 0.15);
+        }
+
+        data.easeFactor = Math.max(
+            this.settings.minimumEaseFactor || 1.3,
+            data.easeFactor + easeChange
         );
     }
 
@@ -120,8 +152,11 @@ export class SpacedRepetitionSystem {
         data.correctStreak = 0;
         data.repetitions = 0;
         data.difficulty = 'learning';
-        data.interval = 1;
-        data.easeFactor = Math.max(1.3, data.easeFactor - 0.2);
+        data.interval = this.settings.graduatingInterval || 1;
+        data.easeFactor = Math.max(
+            this.settings.minimumEaseFactor || 1.3,
+            data.easeFactor - (this.settings.againPenalty || 0.2)
+        );
     }
 
     /**
@@ -133,14 +168,22 @@ export class SpacedRepetitionSystem {
     }
 
     /**
-     * Get cards that are due for review
+     * Get cards that are due for review, respecting daily limits
      */
     getDueCards(cardIds: string[]): string[] {
         const now = new Date();
-        return cardIds.filter(cardId => {
+        const dueCards = cardIds.filter(cardId => {
             const data = this.getCardData(cardId);
             return data.nextReview <= now;
         });
+
+        // Apply maximum reviews per day limit if set
+        const maxReviews = this.settings.maximumReviewsPerDay || 0;
+        if (maxReviews > 0) {
+            return dueCards.slice(0, maxReviews);
+        }
+
+        return dueCards;
     }
 
     /**

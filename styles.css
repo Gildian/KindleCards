@@ -522,6 +522,25 @@
     letter-spacing: 0.5px;
 }
 
+/* Advanced SRS Settings */
+.setting-item-description {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.4;
+    margin-bottom: 20px;
+    font-style: italic;
+}
+
+.setting-item .setting-item-control button.mod-warning {
+    background-color: var(--color-red);
+    color: white;
+}
+
+.setting-item .setting-item-control button.mod-warning:hover {
+    background-color: var(--color-red);
+    opacity: 0.8;
+}
+
 /* Completion Screen */
 .flashcard-completion {
     text-align: center;
