@@ -138,7 +138,9 @@ export class BookSelectionModal extends Modal {
         const result = Array.from(bookMap.values());
         DebugLogger.log('Grouped clippings into', result.length, 'books');
         return result;
-    }    private getBookKey(clipping: KindleClipping): string {
+    }
+
+    private getBookKey(clipping: KindleClipping): string {
         // Create a unique key for each book based on title and author
         const title = (clipping.title || 'Unknown Book').toLowerCase().trim();
         let author = (clipping.author || '').toLowerCase().trim();
@@ -163,11 +165,12 @@ export class BookSelectionModal extends Modal {
         // If spaced repetition is enabled, sort by priority, otherwise shuffle
         let sortedClippings = clippings;
         if (this.plugin?.settings?.enableSpacedRepetition && this.plugin.spacedRepetition) {
-            // Generate card IDs and sort by spaced repetition priority
+            // Generate card IDs and get study cards (respecting daily limits)
             const cardIds = clippings.map(clipping =>
                 SpacedRepetitionSystem.generateCardId(clipping.title, clipping.author, clipping.content)
             );
-            const sortedIds = this.plugin.spacedRepetition.getSortedCards(cardIds);
+            const studyCardIds = this.plugin.spacedRepetition.getStudyCards(cardIds);
+            const sortedIds = this.plugin.spacedRepetition.getSortedCards(studyCardIds);
 
             // Reorder clippings based on sorted IDs
             const clippingMap = new Map();

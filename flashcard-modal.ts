@@ -124,12 +124,12 @@ export class FlashcardStudyModal extends Modal {
         const studyButtons = controlsSection.createEl('div', { cls: 'flashcard-study-buttons' });
 
         this.correctButton = new ButtonComponent(studyButtons)
-            .setButtonText('✓ Got it!')
+            .setButtonText('Got it!')
             .setCta()
             .onClick(() => this.markCard('correct'));
 
         this.incorrectButton = new ButtonComponent(studyButtons)
-            .setButtonText('✗ Need review')
+            .setButtonText('Need review')
             .onClick(() => this.markCard('incorrect'));
 
         // Initially hide study buttons
@@ -360,11 +360,11 @@ export class FlashcardStudyModal extends Modal {
                     currentClipping.content
                 );
 
-                // Map result to difficulty (0=easy, 1=medium, 2=hard)
-                const difficulty = result === 'correct' ? 0 : 2;
+                // Map result to quality score (0-5 scale for SM-2 algorithm)
+                const quality = result === 'correct' ? 4 : 1; // 4 = good, 1 = hard
 
-                // Review the card
-                this.plugin.spacedRepetition.reviewCard(cardId, difficulty);
+                // Review the card with proper ReviewResult format
+                this.plugin.spacedRepetition.reviewCard(cardId, { quality });
 
                 // Save the updated spaced repetition data
                 this.plugin.saveSettings().catch((error: Error) => {

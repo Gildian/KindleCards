@@ -37,7 +37,13 @@ export default class KindleCardsPlugin extends Plugin {
 		DebugLogger.log('KindleCards plugin loaded');
 
 		// Initialize spaced repetition system
-		this.spacedRepetition = new SpacedRepetitionSystem(this.settings.spacedRepetitionData, this.settings);
+		try {
+			this.spacedRepetition = new SpacedRepetitionSystem(this.settings.spacedRepetitionData, this.settings);
+		} catch (error) {
+			console.error('Failed to initialize spaced repetition system:', error);
+			// Initialize with empty data if there's an error
+			this.spacedRepetition = new SpacedRepetitionSystem({}, this.settings);
+		}
 
 		// This creates a single icon in the left ribbon for both sync and study
 		const ribbonIconEl = this.addRibbonIcon('book-open', 'KindleCards', (evt: MouseEvent) => {
@@ -113,7 +119,9 @@ export default class KindleCardsPlugin extends Plugin {
 
 	async saveSettings() {
 		// Save spaced repetition data
-		this.settings.spacedRepetitionData = this.spacedRepetition.exportData();
+		if (this.spacedRepetition) {
+			this.settings.spacedRepetitionData = this.spacedRepetition.exportData();
+		}
 		await this.saveData(this.settings);
 		// Update the spaced repetition system with new settings
 		if (this.spacedRepetition) {
@@ -304,7 +312,8 @@ export default class KindleCardsPlugin extends Plugin {
 			}
 
 			// Get sorted card IDs based on spaced repetition priority
-			const sortedIds = this.spacedRepetition.getSortedCards(cardIds);
+			const studyCardIds = this.spacedRepetition.getStudyCards(cardIds);
+			const sortedIds = this.spacedRepetition.getSortedCards(studyCardIds);
 
 			// Create mapping for reordering
 			const clippingMap = new Map<string, KindleClipping>();
@@ -320,7 +329,7 @@ export default class KindleCardsPlugin extends Plugin {
 				.filter((clipping): clipping is KindleClipping => clipping !== undefined);
 
 			// Show stats
-			const stats = this.spacedRepetition.getStats(cardIds);
+			const stats = this.spacedRepetition.getStats(studyCardIds);
 			new Notice(`Study Session: ${stats.due} due, ${stats.new} new, ${stats.learning} learning`);
 
 			return sortedClippings;
@@ -353,7 +362,7 @@ export default class KindleCardsPlugin extends Plugin {
 			}
 
 			// Open the book selection modal for the current folder
-			const bookSelectionModal = new BookSelectionModal(this.app, clippings);
+			const bookSelectionModal = new BookSelectionModal(this.app, clippings, this);
 			bookSelectionModal.open();
 
 		} catch (error) {
@@ -533,41 +542,6 @@ export default class KindleCardsPlugin extends Plugin {
 			console.error('Error parsing flashcard file:', file.path, error);
 			return null;
 		}
-	}
-
-	private extractContentFromFlashcard(content: string): string {
-		// Remove common markdown formatting and try to extract the main quote
-		let extracted = content;
-
-		// Remove headers
-		extracted = extracted.replace(/^#+\s+.*/gm, '');
-
-		// Look for quoted content
-		const quoteMatch = extracted.match(/[""]([^"""]+)[""]/) || extracted.match(/"([^"]+)"/);
-		if (quoteMatch) {
-			return quoteMatch[1].trim();
-		}
-
-		// Look for content in blockquotes
-		const blockquoteMatch = extracted.match(/^>\s*(.+)/m);
-		if (blockquoteMatch) {
-			return blockquoteMatch[1].trim();
-		}
-
-		// Take first substantial paragraph
-		const lines = extracted.split('\n').filter(line => {
-			const trimmed = line.trim();
-			return trimmed &&
-				   !trimmed.startsWith('#') &&
-				   !trimmed.startsWith('**Source:**') &&
-				   !trimmed.startsWith('**Book:**') &&
-				   !trimmed.startsWith('**Author:**') &&
-				   !trimmed.startsWith('*From') &&
-				   !trimmed.startsWith('---') &&
-				   !trimmed.match(/^[*#-]/);
-		});
-
-		return lines[0]?.trim() || content.trim();
 	}
 
 	private shuffleArray<T>(array: T[]): T[] {

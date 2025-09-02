@@ -187,6 +187,33 @@ export class SpacedRepetitionSystem {
     }
 
     /**
+     * Get new cards up to the daily limit
+     */
+    getNewCards(cardIds: string[]): string[] {
+        const newCards = cardIds.filter(cardId => {
+            const data = this.getCardData(cardId);
+            return data.difficulty === 'new';
+        });
+
+        // Apply new cards per day limit
+        const maxNewCards = this.settings.newCardsPerDay || 20;
+        return newCards.slice(0, maxNewCards);
+    }
+
+    /**
+     * Get cards for study session, respecting all daily limits
+     */
+    getStudyCards(cardIds: string[]): string[] {
+        const dueCards = this.getDueCards(cardIds);
+        const newCards = this.getNewCards(cardIds);
+
+        // Combine due cards and new cards
+        const studyCardIds = new Set([...dueCards, ...newCards]);
+
+        return Array.from(studyCardIds);
+    }
+
+    /**
      * Get cards sorted by review priority
      * Priority order: Overdue → Due → New → Future
      */
@@ -304,6 +331,6 @@ export class SpacedRepetitionSystem {
 
         // Convert to positive hex string and ensure consistent length
         const hashStr = Math.abs(hash).toString(16);
-        return hashStr.padStart(8, '0').substring(0, 32);
+        return hashStr.padStart(8, '0');
     }
 }
