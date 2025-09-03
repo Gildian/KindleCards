@@ -1,10 +1,15 @@
 import { CardReviewData, ReviewResult, SpacedRepetitionStats, KindleCardsSettings } from './types';
 
 /**
- * Spaced Repetition System using SM-2 Algorithm
+ * Anki-compatible Spaced Repetition System
  *
- * This implementation provides intelligent scheduling of flashcard reviews
- * based on user performance to optimize long-term retention.
+ * This implementation replicates Anki's scheduling algorithm:
+ * - 4-button system: Again, Hard, Good, Easy
+ * - Learning/Relearning steps in minutes
+ * - Graduating intervals
+ * - Ease factor adjustments
+ * - Interval modifiers
+ * - Lapse handling
  */
 export class SpacedRepetitionSystem {
     private reviewData: Map<string, CardReviewData> = new Map();
@@ -12,14 +17,18 @@ export class SpacedRepetitionSystem {
 
     constructor(savedData?: Record<string, CardReviewData>, settings?: KindleCardsSettings) {
         this.settings = settings || {
-            initialEaseFactor: 2.5,
-            minimumEaseFactor: 1.3,
-            maximumInterval: 365,
-            easeBonus: 0.15,
-            hardPenalty: 0.15,
-            againPenalty: 0.2,
+            learningSteps: [1, 10],
+            relearningSteps: [10],
             graduatingInterval: 1,
             easyInterval: 4,
+            startingEase: 2.5,
+            easyBonus: 1.3,
+            intervalModifier: 1.0,
+            maximumInterval: 36500,
+            hardInterval: 1.2,
+            newInterval: 0.0,
+            minimumInterval: 1,
+            leechThreshold: 8,
         } as KindleCardsSettings;
         this.loadData(savedData);
     }
@@ -39,14 +48,35 @@ export class SpacedRepetitionSystem {
 
         for (const [cardId, data] of Object.entries(savedData)) {
             try {
-                this.reviewData.set(cardId, {
+                // Handle migration from old format
+                const cardData: CardReviewData = {
                     ...data,
                     nextReview: new Date(data.nextReview),
-                    lastReviewed: new Date(data.lastReviewed)
-                });
+                    lastReviewed: new Date(data.lastReviewed),
+                    // Add new Anki-like properties if missing
+                    lapses: data.lapses || 0,
+                    learningSteps: data.learningSteps || [],
+                    currentStep: data.currentStep || 0,
+                    graduated: data.graduated !== undefined ? data.graduated : data.difficulty === 'review',
+                    buried: data.buried || false,
+                    difficulty: this.migrateDifficulty(data.difficulty)
+                };
+                this.reviewData.set(cardId, cardData);
             } catch (error) {
                 console.warn(`Failed to load review data for card ${cardId}:`, error);
             }
+        }
+    }
+
+    /**
+     * Migrate old difficulty values to new format
+     */
+    private migrateDifficulty(oldDifficulty: string): 'new' | 'learning' | 'review' | 'relearning' {
+        switch (oldDifficulty) {
+            case 'new': return 'new';
+            case 'learning': return 'learning';
+            case 'review': return 'review';
+            default: return 'new';
         }
     }
 
@@ -61,120 +91,240 @@ export class SpacedRepetitionSystem {
     }
 
     /**
-     * Create initial data structure for a new card
+     * Create initial data structure for a new card (Anki-like)
      */
     private createNewCardData(cardId: string): CardReviewData {
         return {
             cardId,
-            easeFactor: this.settings.initialEaseFactor || 2.5,
-            interval: this.settings.graduatingInterval || 1,
+            easeFactor: this.settings.startingEase || 2.5,
+            interval: 0, // Will be set when card graduates
             repetitions: 0,
-            nextReview: new Date(),
+            nextReview: new Date(), // Due now
             lastReviewed: new Date(0),
             totalReviews: 0,
             correctStreak: 0,
-            difficulty: 'new'
+            difficulty: 'new',
+            lapses: 0,
+            learningSteps: [...(this.settings.learningSteps || [1, 10])],
+            currentStep: 0,
+            graduated: false,
+            buried: false
         };
     }
 
     /**
-     * Update card data after a review session using simplified SM-2 algorithm
+     * Review a card with Anki's 4-button system
      */
     reviewCard(cardId: string, result: ReviewResult): CardReviewData {
         const data = this.getCardData(cardId);
         const now = new Date();
 
-        // Update basic tracking data
         data.lastReviewed = now;
         data.totalReviews++;
 
-        // Ensure quality is within valid range (0-5)
-        const quality = Math.max(0, Math.min(5, result.quality));
-
-        if (quality >= 3) {
-            this.handleCorrectAnswer(data, quality);
-        } else {
-            this.handleIncorrectAnswer(data);
+        switch (data.difficulty) {
+            case 'new':
+                this.handleNewCard(data, result.quality, now);
+                break;
+            case 'learning':
+                this.handleLearningCard(data, result.quality, now);
+                break;
+            case 'review':
+                this.handleReviewCard(data, result.quality, now);
+                break;
+            case 'relearning':
+                this.handleRelearningCard(data, result.quality, now);
+                break;
         }
 
-        // Set next review date
-        this.scheduleNextReview(data, now);
+        // Check for leeches
+        if (data.lapses >= (this.settings.leechThreshold || 8)) {
+            data.buried = true;
+            console.log(`Card ${cardId} is now a leech (${data.lapses} lapses)`);
+        }
 
         return data;
     }
 
     /**
-     * Handle correct answer and update intervals/ease factor
+     * Handle new card review (Anki logic)
      */
-    private handleCorrectAnswer(data: CardReviewData, quality: number): void {
-        data.correctStreak++;
-        data.repetitions++;
-
-        // Update difficulty stage and intervals
-        if (data.difficulty === 'new') {
-            data.difficulty = 'learning';
-            data.interval = this.settings.graduatingInterval || 1;
-        } else if (data.difficulty === 'learning' && data.repetitions >= 2) {
-            data.difficulty = 'review';
-            data.interval = this.settings.easyInterval || 4;
-        } else if (data.difficulty === 'review') {
-            // SM-2 algorithm for mature cards
-            const newInterval = Math.ceil(data.interval * data.easeFactor);
-            data.interval = Math.min(newInterval, this.settings.maximumInterval || 365);
-        } else {
-            // Still in learning phase
-            data.interval = Math.min(data.interval + 1, this.settings.easyInterval || 4);
-        }
-
-        // Update ease factor using configurable bonuses
-        let easeChange = 0;
-        if (quality === 5) {
-            // Easy answer - apply bonus
-            easeChange = this.settings.easeBonus || 0.15;
-        } else if (quality === 4) {
-            // Good answer - slight bonus
-            easeChange = (this.settings.easeBonus || 0.15) * 0.5;
-        } else if (quality === 3) {
-            // Hard answer - apply penalty
-            easeChange = -(this.settings.hardPenalty || 0.15);
-        }
-
-        data.easeFactor = Math.max(
-            this.settings.minimumEaseFactor || 1.3,
-            data.easeFactor + easeChange
-        );
-    }
-
-    /**
-     * Handle incorrect answer and reset the card
-     */
-    private handleIncorrectAnswer(data: CardReviewData): void {
-        data.correctStreak = 0;
-        data.repetitions = 0;
+    private handleNewCard(data: CardReviewData, quality: string, now: Date): void {
         data.difficulty = 'learning';
-        data.interval = this.settings.graduatingInterval || 1;
-        data.easeFactor = Math.max(
-            this.settings.minimumEaseFactor || 1.3,
-            data.easeFactor - (this.settings.againPenalty || 0.2)
-        );
+        data.currentStep = 0;
+
+        switch (quality) {
+            case 'again':
+                this.scheduleInLearning(data, 0, now); // Back to first step
+                break;
+            case 'hard':
+            case 'good':
+                this.scheduleInLearning(data, 0, now); // Start learning
+                break;
+            case 'easy':
+                // Graduate immediately with easy interval
+                this.graduateCard(data, this.settings.easyInterval || 4, now);
+                break;
+        }
     }
 
     /**
-     * Schedule the next review date based on interval
+     * Handle learning card review (Anki logic)
      */
-    private scheduleNextReview(data: CardReviewData, now: Date): void {
-        const millisecondsPerDay = 24 * 60 * 60 * 1000;
-        data.nextReview = new Date(now.getTime() + data.interval * millisecondsPerDay);
+    private handleLearningCard(data: CardReviewData, quality: string, now: Date): void {
+        switch (quality) {
+            case 'again':
+                data.currentStep = 0; // Back to first step
+                this.scheduleInLearning(data, 0, now);
+                break;
+            case 'hard':
+                // Stay on current step or go back one
+                const hardStep = Math.max(0, data.currentStep - 1);
+                this.scheduleInLearning(data, hardStep, now);
+                break;
+            case 'good':
+                // Advance to next step or graduate
+                if (data.currentStep < data.learningSteps.length - 1) {
+                    data.currentStep++;
+                    this.scheduleInLearning(data, data.currentStep, now);
+                } else {
+                    // Graduate!
+                    this.graduateCard(data, this.settings.graduatingInterval || 1, now);
+                }
+                break;
+            case 'easy':
+                // Graduate with easy interval
+                this.graduateCard(data, this.settings.easyInterval || 4, now);
+                break;
+        }
     }
 
     /**
-     * Get cards that are due for review, respecting daily limits
+     * Handle review card (mature card) review (Anki logic)
+     */
+    private handleReviewCard(data: CardReviewData, quality: string, now: Date): void {
+        const oldInterval = data.interval;
+
+        switch (quality) {
+            case 'again':
+                // Card lapses - goes to relearning
+                data.lapses++;
+                data.difficulty = 'relearning';
+                data.currentStep = 0;
+                data.learningSteps = [...(this.settings.relearningSteps || [10])];
+                data.easeFactor = Math.max(1.3, data.easeFactor - 0.2); // Reduce ease
+
+                // New interval calculation for lapsed cards
+                const newInterval = Math.max(1, Math.floor(oldInterval * (this.settings.newInterval || 0.0)));
+                data.interval = newInterval;
+
+                this.scheduleInLearning(data, 0, now);
+                break;
+            case 'hard':
+                // Hard interval: previous * 1.2 * interval modifier
+                data.interval = Math.max(
+                    data.interval + 1,
+                    Math.floor(oldInterval * (this.settings.hardInterval || 1.2) * (this.settings.intervalModifier || 1.0))
+                );
+                data.easeFactor = Math.max(1.3, data.easeFactor - 0.15); // Decrease ease
+                this.scheduleReview(data, now);
+                break;
+            case 'good':
+                // Good interval: previous * ease * interval modifier
+                data.interval = Math.floor(oldInterval * data.easeFactor * (this.settings.intervalModifier || 1.0));
+                data.repetitions++;
+                data.correctStreak++;
+                this.scheduleReview(data, now);
+                break;
+            case 'easy':
+                // Easy interval: previous * ease * easy bonus * interval modifier
+                data.interval = Math.floor(
+                    oldInterval * data.easeFactor * (this.settings.easyBonus || 1.3) * (this.settings.intervalModifier || 1.0)
+                );
+                data.easeFactor += 0.15; // Increase ease
+                data.repetitions++;
+                data.correctStreak++;
+                this.scheduleReview(data, now);
+                break;
+        }
+
+        // Cap at maximum interval
+        data.interval = Math.min(data.interval, this.settings.maximumInterval || 36500);
+    }
+
+    /**
+     * Handle relearning card review (Anki logic)
+     */
+    private handleRelearningCard(data: CardReviewData, quality: string, now: Date): void {
+        switch (quality) {
+            case 'again':
+                data.currentStep = 0; // Back to first relearning step
+                this.scheduleInLearning(data, 0, now);
+                break;
+            case 'hard':
+                // Stay on current step or go back
+                const hardStep = Math.max(0, data.currentStep - 1);
+                this.scheduleInLearning(data, hardStep, now);
+                break;
+            case 'good':
+                // Advance in relearning or return to review
+                if (data.currentStep < data.learningSteps.length - 1) {
+                    data.currentStep++;
+                    this.scheduleInLearning(data, data.currentStep, now);
+                } else {
+                    // Return to review with previous interval
+                    data.difficulty = 'review';
+                    data.graduated = true;
+                    this.scheduleReview(data, now);
+                }
+                break;
+            case 'easy':
+                // Return to review with easy bonus
+                data.difficulty = 'review';
+                data.graduated = true;
+                data.interval = Math.floor(data.interval * (this.settings.easyBonus || 1.3));
+                this.scheduleReview(data, now);
+                break;
+        }
+    }
+
+    /**
+     * Schedule a card in learning/relearning phase
+     */
+    private scheduleInLearning(data: CardReviewData, stepIndex: number, now: Date): void {
+        data.currentStep = stepIndex;
+        const minutes = data.learningSteps[stepIndex] || 1;
+        data.nextReview = new Date(now.getTime() + minutes * 60 * 1000);
+    }
+
+    /**
+     * Graduate a card from learning to review
+     */
+    private graduateCard(data: CardReviewData, interval: number, now: Date): void {
+        data.difficulty = 'review';
+        data.graduated = true;
+        data.interval = interval;
+        data.repetitions = 1;
+        data.correctStreak = 1;
+        this.scheduleReview(data, now);
+    }
+
+    /**
+     * Schedule a review card
+     */
+    private scheduleReview(data: CardReviewData, now: Date): void {
+        const intervalMs = data.interval * 24 * 60 * 60 * 1000;
+        data.nextReview = new Date(now.getTime() + intervalMs);
+    }
+
+    /**
+     * Get cards that are due for review (including learning cards)
      */
     getDueCards(cardIds: string[]): string[] {
         const now = new Date();
         const dueCards = cardIds.filter(cardId => {
             const data = this.getCardData(cardId);
-            return data.nextReview <= now;
+            return !data.buried && data.nextReview <= now;
         });
 
         // Apply maximum reviews per day limit if set
@@ -192,7 +342,7 @@ export class SpacedRepetitionSystem {
     getNewCards(cardIds: string[]): string[] {
         const newCards = cardIds.filter(cardId => {
             const data = this.getCardData(cardId);
-            return data.difficulty === 'new';
+            return !data.buried && data.difficulty === 'new';
         });
 
         // Apply new cards per day limit
@@ -201,21 +351,38 @@ export class SpacedRepetitionSystem {
     }
 
     /**
-     * Get cards for study session, respecting all daily limits
+     * Get cards for study session, respecting all daily limits (Anki-like)
      */
     getStudyCards(cardIds: string[]): string[] {
-        const dueCards = this.getDueCards(cardIds);
+        // Get due cards (learning, relearning, and due review cards)
+        const now = new Date();
+        const dueCards = cardIds.filter(cardId => {
+            const data = this.getCardData(cardId);
+            if (data.buried) return false;
+
+            return data.nextReview <= now && (
+                data.difficulty === 'learning' ||
+                data.difficulty === 'relearning' ||
+                data.difficulty === 'review'
+            );
+        });
+
+        // Get new cards
         const newCards = this.getNewCards(cardIds);
 
-        // Combine due cards and new cards
-        const studyCardIds = new Set([...dueCards, ...newCards]);
+        // Combine and limit
+        const studyCards = [...dueCards, ...newCards];
+        const maxReviews = this.settings.maximumReviewsPerDay || 0;
 
-        return Array.from(studyCardIds);
+        if (maxReviews > 0) {
+            return studyCards.slice(0, maxReviews);
+        }
+
+        return studyCards;
     }
 
     /**
-     * Get cards sorted by review priority
-     * Priority order: Overdue → Due → New → Future
+     * Get cards sorted by review priority (Anki-like)
      */
     getSortedCards(cardIds: string[]): string[] {
         const now = new Date();
@@ -224,43 +391,45 @@ export class SpacedRepetitionSystem {
             const dataA = this.getCardData(a);
             const dataB = this.getCardData(b);
 
-            return this.comparePriority(dataA, dataB, now);
+            // Buried cards go last
+            if (dataA.buried && !dataB.buried) return 1;
+            if (!dataA.buried && dataB.buried) return -1;
+
+            // Learning/relearning cards first (most urgent)
+            if ((dataA.difficulty === 'learning' || dataA.difficulty === 'relearning') &&
+                (dataB.difficulty !== 'learning' && dataB.difficulty !== 'relearning')) return -1;
+            if ((dataA.difficulty !== 'learning' && dataA.difficulty !== 'relearning') &&
+                (dataB.difficulty === 'learning' || dataB.difficulty === 'relearning')) return 1;
+
+            // Among learning cards, sort by next review time
+            if ((dataA.difficulty === 'learning' || dataA.difficulty === 'relearning') &&
+                (dataB.difficulty === 'learning' || dataB.difficulty === 'relearning')) {
+                return dataA.nextReview.getTime() - dataB.nextReview.getTime();
+            }
+
+            // Due review cards next
+            const aDue = dataA.nextReview <= now;
+            const bDue = dataB.nextReview <= now;
+
+            if (aDue && !bDue) return -1;
+            if (!aDue && bDue) return 1;
+
+            // Among due cards, most overdue first
+            if (aDue && bDue) {
+                return dataA.nextReview.getTime() - dataB.nextReview.getTime();
+            }
+
+            // New cards last
+            if (dataA.difficulty === 'new' && dataB.difficulty !== 'new') return 1;
+            if (dataA.difficulty !== 'new' && dataB.difficulty === 'new') return -1;
+
+            // Finally, sort by ease factor (lower = more difficult)
+            return dataA.easeFactor - dataB.easeFactor;
         });
     }
 
     /**
-     * Compare two cards for priority sorting
-     */
-    private comparePriority(dataA: CardReviewData, dataB: CardReviewData, now: Date): number {
-        const aDue = dataA.nextReview <= now;
-        const bDue = dataB.nextReview <= now;
-
-        // Due cards always come before non-due cards
-        if (aDue && !bDue) return -1;
-        if (!aDue && bDue) return 1;
-
-        // Among due cards, most overdue first
-        if (aDue && bDue) {
-            const aOverdue = now.getTime() - dataA.nextReview.getTime();
-            const bOverdue = now.getTime() - dataB.nextReview.getTime();
-            return bOverdue - aOverdue;
-        }
-
-        // Among non-due cards, prioritize by difficulty stage
-        const difficultyOrder = { 'new': 0, 'learning': 1, 'review': 2 };
-        const aDiffOrder = difficultyOrder[dataA.difficulty];
-        const bDiffOrder = difficultyOrder[dataB.difficulty];
-
-        if (aDiffOrder !== bDiffOrder) {
-            return aDiffOrder - bDiffOrder;
-        }
-
-        // Finally, sort by ease factor (lower = more difficult)
-        return dataA.easeFactor - dataB.easeFactor;
-    }
-
-    /**
-     * Get comprehensive study statistics
+     * Get comprehensive study statistics (Anki-like)
      */
     getStats(cardIds: string[]): SpacedRepetitionStats {
         const now = new Date();
@@ -274,22 +443,28 @@ export class SpacedRepetitionSystem {
         };
 
         let totalEase = 0;
+        let easeCount = 0;
 
         for (const cardId of cardIds) {
             const data = this.getCardData(cardId);
 
+            if (data.buried) continue;
+
             // Count by difficulty
-            stats[data.difficulty]++;
-
-            // Count due cards
-            if (data.nextReview <= now) {
-                stats.due++;
+            if (data.difficulty === 'new') {
+                stats.new++;
+            } else if (data.difficulty === 'learning' || data.difficulty === 'relearning') {
+                stats.learning++;
+                if (data.nextReview <= now) stats.due++;
+            } else if (data.difficulty === 'review') {
+                stats.review++;
+                if (data.nextReview <= now) stats.due++;
+                totalEase += data.easeFactor;
+                easeCount++;
             }
-
-            totalEase += data.easeFactor;
         }
 
-        stats.averageEase = cardIds.length > 0 ? totalEase / cardIds.length : 2.5;
+        stats.averageEase = easeCount > 0 ? totalEase / easeCount : (this.settings.startingEase || 2.5);
         return stats;
     }
 
@@ -306,7 +481,6 @@ export class SpacedRepetitionSystem {
 
     /**
      * Generate a unique, stable card ID from clipping data
-     * Uses Unicode-safe hash function to avoid btoa() issues
      */
     static generateCardId(title: string, author: string, content: string): string {
         if (!title || !author || !content) {

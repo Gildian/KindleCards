@@ -20,6 +20,8 @@ export class FlashcardStudyModal extends Modal {
     private prevButton: ButtonComponent;
     private correctButton: ButtonComponent;
     private incorrectButton: ButtonComponent;
+    private hardButton: ButtonComponent;
+    private easyButton: ButtonComponent;
     private statsElement: HTMLElement;
 
     constructor(app: App, clippings: KindleClipping[], bookTitle?: string, plugin?: IKindleCardsPlugin) {
@@ -120,17 +122,25 @@ export class FlashcardStudyModal extends Modal {
             .setButtonText('Next →')
             .onClick(() => this.nextCard());
 
-        // Study buttons (appear after flipping)
+        // Study buttons (Anki-style 4-button system)
         const studyButtons = controlsSection.createEl('div', { cls: 'flashcard-study-buttons' });
 
-        this.correctButton = new ButtonComponent(studyButtons)
-            .setButtonText('Got it!')
-            .setCta()
-            .onClick(() => this.markCard('correct'));
-
         this.incorrectButton = new ButtonComponent(studyButtons)
-            .setButtonText('Need review')
-            .onClick(() => this.markCard('incorrect'));
+            .setButtonText('Again')
+            .onClick(() => this.markCard('again'));
+
+        this.hardButton = new ButtonComponent(studyButtons)
+            .setButtonText('Hard')
+            .onClick(() => this.markCard('hard'));
+
+        this.correctButton = new ButtonComponent(studyButtons)
+            .setButtonText('Good')
+            .setCta()
+            .onClick(() => this.markCard('good'));
+
+        this.easyButton = new ButtonComponent(studyButtons)
+            .setButtonText('Easy')
+            .onClick(() => this.markCard('easy'));
 
         // Initially hide study buttons
         studyButtons.style.display = 'none';
@@ -328,23 +338,25 @@ export class FlashcardStudyModal extends Modal {
         }
     }
 
-    private markCard(result: 'correct' | 'incorrect') {
+    private markCard(result: 'again' | 'hard' | 'good' | 'easy') {
         if (!this.showingAnswer) {
             new Notice('Flip the card first to see the answer!');
             return;
         }
 
         // Prevent multiple clicks by immediately disabling buttons
-        this.correctButton.setDisabled(true);
         this.incorrectButton.setDisabled(true);
+        this.hardButton.setDisabled(true);
+        this.correctButton.setDisabled(true);
+        this.easyButton.setDisabled(true);
 
         const currentClipping = this.clippings[this.currentIndex];
 
-        // Update traditional stats
-        if (result === 'correct') {
-            this.studyStats.correct++;
-        } else {
+        // Update traditional stats (map Anki buttons to traditional stats)
+        if (result === 'again') {
             this.studyStats.incorrect++;
+        } else {
+            this.studyStats.correct++;
         }
 
         this.studyStats.remaining--;
@@ -360,11 +372,8 @@ export class FlashcardStudyModal extends Modal {
                     currentClipping.content
                 );
 
-                // Map result to quality score (0-5 scale for SM-2 algorithm)
-                const quality = result === 'correct' ? 4 : 1; // 4 = good, 1 = hard
-
-                // Review the card with proper ReviewResult format
-                this.plugin.spacedRepetition.reviewCard(cardId, { quality });
+                // Review the card with Anki-style result
+                this.plugin.spacedRepetition.reviewCard(cardId, { quality: result });
 
                 // Save the updated spaced repetition data
                 this.plugin.saveSettings().catch((error: Error) => {
@@ -413,8 +422,10 @@ export class FlashcardStudyModal extends Modal {
                 studyButtons.style.display = 'flex';
                 studyButtons.removeClass('flashcard-study-buttons-hidden');
                 // Re-enable buttons when showing answer (in case they were disabled)
-                this.correctButton.setDisabled(false);
                 this.incorrectButton.setDisabled(false);
+                this.hardButton.setDisabled(false);
+                this.correctButton.setDisabled(false);
+                this.easyButton.setDisabled(false);
             } else {
                 studyButtons.style.display = 'none';
                 studyButtons.addClass('flashcard-study-buttons-hidden');
