@@ -1,4 +1,5 @@
 import { CardReviewData, ReviewResult, SpacedRepetitionStats, KindleCardsSettings } from './types';
+import { DebugLogger } from './logger';
 
 /**
  * Anki-compatible Spaced Repetition System
@@ -140,7 +141,7 @@ export class SpacedRepetitionSystem {
         // Check for leeches
         if (data.lapses >= (this.settings.leechThreshold || 8)) {
             data.buried = true;
-            console.log(`Card ${cardId} is now a leech (${data.lapses} lapses)`);
+            DebugLogger.log(`Card ${cardId} is now a leech (${data.lapses} lapses)`);
         }
 
         return data;
