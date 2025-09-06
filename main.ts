@@ -109,6 +109,17 @@ export default class KindleCardsPlugin extends Plugin {
 			}
 		});
 
+		// Debug command for spaced repetition
+		this.addCommand({
+			id: 'debug-spaced-repetition',
+			name: 'Debug Spaced Repetition System',
+			callback: () => {
+				DebugLogger.enableDebug();
+				this.spacedRepetition.debugInfo();
+				new Notice('Spaced repetition debug info logged to console (F12)');
+			}
+		});
+
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new KindleCardsSettingTab(this.app, this));
 	}
@@ -119,12 +130,14 @@ export default class KindleCardsPlugin extends Plugin {
 
 	async loadSettings() {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		DebugLogger.log(`Loaded settings with ${Object.keys(this.settings.spacedRepetitionData || {}).length} saved card records`);
 	}
 
 	async saveSettings() {
 		// Save spaced repetition data
 		if (this.spacedRepetition) {
 			this.settings.spacedRepetitionData = this.spacedRepetition.exportData();
+			DebugLogger.log(`Saving ${Object.keys(this.settings.spacedRepetitionData).length} card records to disk`);
 		}
 		await this.saveData(this.settings);
 		// Update the spaced repetition system with new settings

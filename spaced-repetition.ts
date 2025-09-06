@@ -52,21 +52,27 @@ export class SpacedRepetitionSystem {
                 // Handle migration from old format
                 const cardData: CardReviewData = {
                     ...data,
-                    nextReview: new Date(data.nextReview),
-                    lastReviewed: new Date(data.lastReviewed),
+                    // Parse dates properly - handle both Date objects and ISO strings
+                    nextReview: data.nextReview instanceof Date ? data.nextReview : new Date(data.nextReview),
+                    lastReviewed: data.lastReviewed instanceof Date ? data.lastReviewed : new Date(data.lastReviewed),
                     // Add new Anki-like properties if missing
                     lapses: data.lapses || 0,
-                    learningSteps: data.learningSteps || [],
+                    learningSteps: data.learningSteps || [...(this.settings.learningSteps || [1, 10])],
                     currentStep: data.currentStep || 0,
                     graduated: data.graduated !== undefined ? data.graduated : data.difficulty === 'review',
                     buried: data.buried || false,
                     difficulty: this.migrateDifficulty(data.difficulty)
                 };
                 this.reviewData.set(cardId, cardData);
+                DebugLogger.log(`Loaded card data for ${cardId}: ${cardData.difficulty}, next: ${cardData.nextReview.toISOString()}`);
             } catch (error) {
                 console.warn(`Failed to load review data for card ${cardId}:`, error);
+                // Create fresh card data if loading fails
+                this.reviewData.set(cardId, this.createNewCardData(cardId));
             }
         }
+
+        DebugLogger.log(`Loaded ${this.reviewData.size} cards from saved data`);
     }
 
     /**
@@ -119,6 +125,8 @@ export class SpacedRepetitionSystem {
     reviewCard(cardId: string, result: ReviewResult): CardReviewData {
         const data = this.getCardData(cardId);
         const now = new Date();
+        const oldDifficulty = data.difficulty;
+        const oldNextReview = new Date(data.nextReview);
 
         data.lastReviewed = now;
         data.totalReviews++;
@@ -143,6 +151,9 @@ export class SpacedRepetitionSystem {
             data.buried = true;
             DebugLogger.log(`Card ${cardId} is now a leech (${data.lapses} lapses)`);
         }
+
+        // Log the review for debugging
+        DebugLogger.log(`Card reviewed: ${cardId.substring(0, 8)}... | ${result.quality} | ${oldDifficulty}->${data.difficulty} | Next: ${data.nextReview.toISOString()}`);
 
         return data;
     }
@@ -470,12 +481,38 @@ export class SpacedRepetitionSystem {
     }
 
     /**
+     * Debug method to inspect current state
+     */
+    debugInfo(): void {
+        DebugLogger.log('=== Spaced Repetition System Debug Info ===');
+        DebugLogger.log(`Total cards in memory: ${this.reviewData.size}`);
+
+        const difficulties = { new: 0, learning: 0, review: 0, relearning: 0 };
+        const now = new Date();
+        let dueCount = 0;
+
+        for (const [cardId, data] of this.reviewData) {
+            difficulties[data.difficulty]++;
+            if (data.nextReview <= now) dueCount++;
+        }
+
+        DebugLogger.log('Cards by difficulty:', difficulties);
+        DebugLogger.log(`Cards due now: ${dueCount}`);
+        DebugLogger.log('===========================================');
+    }
+
+    /**
      * Export data for persistence (converts Dates to strings)
      */
     exportData(): Record<string, CardReviewData> {
         const exported: Record<string, CardReviewData> = {};
         for (const [cardId, data] of this.reviewData) {
-            exported[cardId] = { ...data };
+            // Create a serializable copy with Date objects converted to ISO strings
+            exported[cardId] = {
+                ...data,
+                nextReview: data.nextReview.toISOString(),
+                lastReviewed: data.lastReviewed.toISOString()
+            } as any; // Cast to any to allow string dates during serialization
         }
         return exported;
     }
