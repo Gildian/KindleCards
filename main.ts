@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile, TFolder, TextComponent } from 'obsidian';
 import { KindleParser } from './kindle-parser';
 import { FlashcardGenerator } from './flashcard-generator';
 import { FlashcardStudyModal } from './flashcard-modal';
@@ -14,6 +14,9 @@ const DEFAULT_SETTINGS: KindleCardsSettings = {
 	spacedRepetitionData: {},
 	enableSpacedRepetition: true,
 	newCardsPerDay: 20,
+	// GitHub Integration
+	enableGitHubIntegration: true,
+	defaultCommitMessage: 'Update KindleCards',
 	// Anki-like SRS Settings (matching Anki defaults)
 	learningSteps: [1, 10], // 1 minute, 10 minutes
 	relearningSteps: [10], // 10 minutes
@@ -54,6 +57,13 @@ export default class KindleCardsPlugin extends Plugin {
 			// Open the main KindleCards interface
 			this.openKindleCardsInterface();
 		});
+
+		// Add GitHub integration ribbon icon (if enabled)
+		if (this.settings.enableGitHubIntegration) {
+			this.addRibbonIcon('git-branch', 'Quick Commit to GitHub', (evt: MouseEvent) => {
+				this.quickCommitToGitHub();
+			});
+		}
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
@@ -117,6 +127,19 @@ export default class KindleCardsPlugin extends Plugin {
 				DebugLogger.enableDebug();
 				this.spacedRepetition.debugInfo();
 				new Notice('Spaced repetition debug info logged to console (F12)');
+			}
+		});
+
+		// GitHub integration
+		this.addCommand({
+			id: 'commit-to-github',
+			name: 'Quick Commit to GitHub',
+			callback: () => {
+				if (!this.settings.enableGitHubIntegration) {
+					new Notice('GitHub integration is disabled. Enable it in settings.');
+					return;
+				}
+				this.quickCommitToGitHub();
 			}
 		});
 
@@ -360,6 +383,100 @@ export default class KindleCardsPlugin extends Plugin {
 
 	openMainInterface() {
 		new Notice('KindleCards Main Menu - Feature coming soon! Use commands for now.');
+	}
+
+	async quickCommitToGitHub() {
+		try {
+			// Check if we're in a git repository
+			const checkGitResult = await this.runGitCommand('git status --porcelain');
+			
+			if (checkGitResult.includes('not a git repository')) {
+				new Notice('❌ Not in a git repository. Initialize git first.');
+				return;
+			}
+
+			// Check for changes
+			if (checkGitResult.trim() === '') {
+				new Notice('✅ No changes to commit. Working directory is clean.');
+				return;
+			}
+
+			// Show changes and ask for commit message
+			const changes = checkGitResult.split('\n').filter(line => line.trim()).length;
+			const commitMessage = await this.promptForCommitMessage(changes);
+			
+			if (!commitMessage) {
+				new Notice('Commit cancelled.');
+				return;
+			}
+
+			// Add all changes
+			new Notice('📝 Adding changes...');
+			await this.runGitCommand('git add .');
+
+			// Commit with message
+			new Notice('💾 Committing changes...');
+			const commitResult = await this.runGitCommand(`git commit -m "${commitMessage}"`);
+			
+			if (commitResult.includes('nothing to commit')) {
+				new Notice('✅ Nothing to commit - all changes already staged.');
+				return;
+			}
+
+			// Check if we have a remote configured
+			const remoteResult = await this.runGitCommand('git remote -v');
+			if (remoteResult.trim() === '') {
+				new Notice('⚠️ No remote repository configured. Committed locally only.');
+				return;
+			}
+
+			// Push to origin
+			new Notice('🚀 Pushing to GitHub...');
+			const pushResult = await this.runGitCommand('git push origin main');
+
+			if (pushResult.includes('error') || pushResult.includes('fatal')) {
+				// Try pushing to master if main fails
+				const pushMasterResult = await this.runGitCommand('git push origin master');
+				if (pushMasterResult.includes('error') || pushMasterResult.includes('fatal')) {
+					new Notice('❌ Push failed. Check console for details.');
+					console.error('Git push error:', pushResult, pushMasterResult);
+				} else {
+					new Notice('✅ Successfully pushed to GitHub! (master branch)');
+				}
+			} else {
+				new Notice('✅ Successfully pushed to GitHub! (main branch)');
+				DebugLogger.log('GitHub push successful:', pushResult);
+			}
+
+		} catch (error) {
+			console.error('Error with GitHub commit:', error);
+			new Notice('❌ Error committing to GitHub. Check console for details.');
+		}
+	}	private async promptForCommitMessage(changedFiles: number): Promise<string | null> {
+		return new Promise((resolve) => {
+			const modal = new CommitMessageModal(this.app, changedFiles, this, (message: string | null) => {
+				resolve(message);
+			});
+			modal.open();
+		});
+	}
+
+	private async runGitCommand(command: string): Promise<string> {
+		const { exec } = require('child_process');
+		const { promisify } = require('util');
+		const execAsync = promisify(exec);
+
+		try {
+			const workspaceFolder = (this.app.vault.adapter as any).path;
+			const { stdout, stderr } = await execAsync(command, {
+				cwd: workspaceFolder,
+				timeout: 30000 // 30 second timeout
+			});
+
+			return stdout + stderr;
+		} catch (error) {
+			return error.message || 'Command failed';
+		}
 	}
 
 	async studyCurrentFolder() {
@@ -689,6 +806,30 @@ class KindleCardsSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
+		// GitHub Integration Section
+		containerEl.createEl('h2', {text: 'GitHub Integration'});
+
+		new Setting(containerEl)
+			.setName('Enable GitHub Integration')
+			.setDesc('Show GitHub commit options in ribbon and commands')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableGitHubIntegration)
+				.onChange(async (value) => {
+					this.plugin.settings.enableGitHubIntegration = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Default Commit Message')
+			.setDesc('Default message for quick commits (you can edit it each time)')
+			.addText(text => text
+				.setPlaceholder('Update KindleCards')
+				.setValue(this.plugin.settings.defaultCommitMessage)
+				.onChange(async (value) => {
+					this.plugin.settings.defaultCommitMessage = value;
+					await this.plugin.saveSettings();
+				}));
+
 		// Spaced Repetition Section
 		containerEl.createEl('h2', {text: 'Spaced Repetition'});
 
@@ -934,5 +1075,109 @@ class KindleCardsSettingTab extends PluginSettingTab {
 				});
 			}
 		}
+	}
+}
+
+class CommitMessageModal extends Modal {
+	private changedFiles: number;
+	private onSubmit: (message: string | null) => void;
+	private messageInput: TextComponent;
+	private plugin: KindleCardsPlugin;
+
+	constructor(app: App, changedFiles: number, plugin: KindleCardsPlugin, onSubmit: (message: string | null) => void) {
+		super(app);
+		this.changedFiles = changedFiles;
+		this.plugin = plugin;
+		this.onSubmit = onSubmit;
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.addClass('commit-message-modal');
+
+		// Header
+		contentEl.createEl('h2', { text: '📝 Commit to GitHub' });
+		contentEl.createEl('p', {
+			text: `${this.changedFiles} file(s) changed. Enter a commit message:`,
+			cls: 'commit-info'
+		});
+
+		// Input field
+		const inputContainer = contentEl.createEl('div', { cls: 'commit-input-container' });
+		
+		const defaultMessage = this.plugin.settings.defaultCommitMessage || 'Update KindleCards';
+		const timestampedMessage = `${defaultMessage} - ${new Date().toLocaleDateString()}`;
+		
+		this.messageInput = new TextComponent(inputContainer)
+			.setPlaceholder('e.g., Add new feature, Fix bug, Update documentation...')
+			.setValue(timestampedMessage);		this.messageInput.inputEl.style.width = '100%';
+		this.messageInput.inputEl.style.marginBottom = '1em';
+
+		// Suggestions
+		const suggestionsEl = contentEl.createEl('div', { cls: 'commit-suggestions' });
+		suggestionsEl.createEl('p', { text: 'Quick suggestions:', cls: 'suggestions-header' });
+
+		const suggestions = [
+			'🐛 Fix spaced repetition bugs',
+			'✨ Add new GitHub integration',
+			'📝 Update documentation',
+			'🎨 Improve UI/UX',
+			'⚡ Performance improvements',
+			'🔧 Configuration updates'
+		];
+
+		suggestions.forEach(suggestion => {
+			const btn = suggestionsEl.createEl('button', {
+				text: suggestion,
+				cls: 'suggestion-btn'
+			});
+			btn.onclick = () => {
+				this.messageInput.setValue(suggestion);
+				this.messageInput.inputEl.focus();
+			};
+		});
+
+		// Buttons
+		const buttonContainer = contentEl.createEl('div', { cls: 'commit-buttons' });
+
+		const commitBtn = buttonContainer.createEl('button', {
+			text: '🚀 Commit & Push',
+			cls: 'mod-cta'
+		});
+		commitBtn.onclick = () => {
+			const message = this.messageInput.getValue().trim();
+			if (message) {
+				this.close();
+				this.onSubmit(message);
+			} else {
+				new Notice('Please enter a commit message');
+			}
+		};
+
+		const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+		cancelBtn.onclick = () => {
+			this.close();
+			this.onSubmit(null);
+		};
+
+		// Focus input and select text
+		setTimeout(() => {
+			this.messageInput.inputEl.focus();
+			this.messageInput.inputEl.select();
+		}, 100);
+
+		// Enter key support
+		this.messageInput.inputEl.addEventListener('keydown', (e) => {
+			if (e.key === 'Enter' && !e.shiftKey) {
+				e.preventDefault();
+				commitBtn.click();
+			}
+		});
+	}
+
+	onClose() {
+		const { contentEl } = this;
+		contentEl.empty();
 	}
 }
