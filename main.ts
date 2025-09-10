@@ -14,9 +14,7 @@ const DEFAULT_SETTINGS: KindleCardsSettings = {
 	spacedRepetitionData: {},
 	enableSpacedRepetition: true,
 	newCardsPerDay: 20,
-	// GitHub Integration
-	enableGitHubIntegration: true,
-	defaultCommitMessage: 'Update KindleCards',
+	
 	// Anki-like SRS Settings (matching Anki defaults)
 	learningSteps: [1, 10], // 1 minute, 10 minutes
 	relearningSteps: [10], // 10 minutes
@@ -30,7 +28,55 @@ const DEFAULT_SETTINGS: KindleCardsSettings = {
 	newInterval: 0.0, // 0% (reset to learning)
 	minimumInterval: 1, // 1 day
 	leechThreshold: 8, // 8 lapses
-	maximumReviewsPerDay: 200
+	maximumReviewsPerDay: 200,
+	
+	// Study Experience Settings
+	enableCardFlipAnimation: true,
+	showProgressStats: true,
+	enableKeyboardShortcuts: true,
+	autoShowAnswer: false,
+	autoShowAnswerDelay: 5,
+	enableFullscreenStudy: true,
+	showTimerDuringStudy: false,
+	enableSoundEffects: false,
+	
+	// Content Processing Settings
+	includeHighlightedText: true,
+	includeBookNotes: true,
+	includeLocationInfo: true,
+	minimumContentLength: 10,
+	maximumContentLength: 1000,
+	excludePatterns: [],
+	includeOnlyPatterns: [],
+	
+	// File Organization Settings
+	groupCardsByBook: true,
+	useBookAuthorFolders: false,
+	generateTOC: false,
+	includeMetadataFiles: false,
+	cardFileNamingFormat: '{{title}} - {{location}}',
+	enableAutoSync: false,
+	backupBeforeSync: true,
+	
+	// UI/UX Preferences
+	preferredTheme: 'auto',
+	compactMode: false,
+	showBookCovers: false,
+	enableBulkOperations: true,
+	confirmDeletions: true,
+	showAdvancedStats: true,
+	
+	// Performance Settings
+	maxCardsInMemory: 1000,
+	enableBackgroundSync: false,
+	cacheBookData: true,
+	enableDebugLogging: false,
+	
+	// Export/Import Settings
+	exportIncludeStats: true,
+	exportFormat: 'json',
+	enableAutoExport: false,
+	autoExportInterval: 24
 };
 
 export default class KindleCardsPlugin extends Plugin {
@@ -58,12 +104,10 @@ export default class KindleCardsPlugin extends Plugin {
 			this.openKindleCardsInterface();
 		});
 
-		// Add GitHub integration ribbon icon (if enabled)
-		if (this.settings.enableGitHubIntegration) {
-			this.addRibbonIcon('git-branch', 'Quick Commit to GitHub', (evt: MouseEvent) => {
-				this.quickCommitToGitHub();
-			});
-		}
+		// Add GitHub integration ribbon icon
+		this.addRibbonIcon('git-branch', 'Quick Commit to GitHub', (evt: MouseEvent) => {
+			this.quickCommitToGitHub();
+		});
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
@@ -135,10 +179,6 @@ export default class KindleCardsPlugin extends Plugin {
 			id: 'commit-to-github',
 			name: 'Quick Commit to GitHub',
 			callback: () => {
-				if (!this.settings.enableGitHubIntegration) {
-					new Notice('GitHub integration is disabled. Enable it in settings.');
-					return;
-				}
 				this.quickCommitToGitHub();
 			}
 		});
@@ -389,7 +429,7 @@ export default class KindleCardsPlugin extends Plugin {
 		try {
 			// Check if we're in a git repository
 			const checkGitResult = await this.runGitCommand('git status --porcelain');
-			
+
 			if (checkGitResult.includes('not a git repository')) {
 				new Notice('❌ Not in a git repository. Initialize git first.');
 				return;
@@ -404,7 +444,7 @@ export default class KindleCardsPlugin extends Plugin {
 			// Show changes and ask for commit message
 			const changes = checkGitResult.split('\n').filter(line => line.trim()).length;
 			const commitMessage = await this.promptForCommitMessage(changes);
-			
+
 			if (!commitMessage) {
 				new Notice('Commit cancelled.');
 				return;
@@ -416,35 +456,17 @@ export default class KindleCardsPlugin extends Plugin {
 
 			// Commit with message
 			new Notice('💾 Committing changes...');
-			const commitResult = await this.runGitCommand(`git commit -m "${commitMessage}"`);
-			
-			if (commitResult.includes('nothing to commit')) {
-				new Notice('✅ Nothing to commit - all changes already staged.');
-				return;
-			}
-
-			// Check if we have a remote configured
-			const remoteResult = await this.runGitCommand('git remote -v');
-			if (remoteResult.trim() === '') {
-				new Notice('⚠️ No remote repository configured. Committed locally only.');
-				return;
-			}
+			await this.runGitCommand(`git commit -m "${commitMessage}"`);
 
 			// Push to origin
 			new Notice('🚀 Pushing to GitHub...');
 			const pushResult = await this.runGitCommand('git push origin main');
 
 			if (pushResult.includes('error') || pushResult.includes('fatal')) {
-				// Try pushing to master if main fails
-				const pushMasterResult = await this.runGitCommand('git push origin master');
-				if (pushMasterResult.includes('error') || pushMasterResult.includes('fatal')) {
-					new Notice('❌ Push failed. Check console for details.');
-					console.error('Git push error:', pushResult, pushMasterResult);
-				} else {
-					new Notice('✅ Successfully pushed to GitHub! (master branch)');
-				}
+				new Notice('❌ Push failed. Check console for details.');
+				console.error('Git push error:', pushResult);
 			} else {
-				new Notice('✅ Successfully pushed to GitHub! (main branch)');
+				new Notice('✅ Successfully pushed to GitHub!');
 				DebugLogger.log('GitHub push successful:', pushResult);
 			}
 
@@ -452,9 +474,11 @@ export default class KindleCardsPlugin extends Plugin {
 			console.error('Error with GitHub commit:', error);
 			new Notice('❌ Error committing to GitHub. Check console for details.');
 		}
-	}	private async promptForCommitMessage(changedFiles: number): Promise<string | null> {
+	}
+
+	private async promptForCommitMessage(changedFiles: number): Promise<string | null> {
 		return new Promise((resolve) => {
-			const modal = new CommitMessageModal(this.app, changedFiles, this, (message: string | null) => {
+			const modal = new CommitMessageModal(this.app, changedFiles, (message: string | null) => {
 				resolve(message);
 			});
 			modal.open();
@@ -772,6 +796,16 @@ class KindleCardsSettingTab extends PluginSettingTab {
 		const {containerEl} = this;
 
 		containerEl.empty();
+		
+		// Main header
+		containerEl.createEl('h1', {text: '📚 KindleCards Settings'});
+		containerEl.createEl('p', {
+			text: 'Configure your KindleCards experience with these comprehensive settings.',
+			cls: 'setting-item-description'
+		});
+
+		// Basic Configuration Section
+		containerEl.createEl('h2', {text: '⚙️ Basic Configuration'});
 
 		new Setting(containerEl)
 			.setName('Kindle Path')
@@ -786,7 +820,7 @@ class KindleCardsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Output Folder')
-			.setDesc('Folder where flashcards will be created')
+			.setDesc('Folder where flashcards will be created in your vault')
 			.addText(text => text
 				.setPlaceholder('KindleCards')
 				.setValue(this.plugin.settings.outputFolder)
@@ -806,32 +840,363 @@ class KindleCardsSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
-		// GitHub Integration Section
-		containerEl.createEl('h2', {text: 'GitHub Integration'});
+		// Study Experience Section
+		containerEl.createEl('h2', {text: '🎯 Study Experience'});
 
 		new Setting(containerEl)
-			.setName('Enable GitHub Integration')
-			.setDesc('Show GitHub commit options in ribbon and commands')
+			.setName('Enable Card Flip Animation')
+			.setDesc('Animate cards when flipping from question to answer')
 			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.enableGitHubIntegration)
+				.setValue(this.plugin.settings.enableCardFlipAnimation)
 				.onChange(async (value) => {
-					this.plugin.settings.enableGitHubIntegration = value;
+					this.plugin.settings.enableCardFlipAnimation = value;
 					await this.plugin.saveSettings();
 				}));
 
 		new Setting(containerEl)
-			.setName('Default Commit Message')
-			.setDesc('Default message for quick commits (you can edit it each time)')
-			.addText(text => text
-				.setPlaceholder('Update KindleCards')
-				.setValue(this.plugin.settings.defaultCommitMessage)
+			.setName('Show Progress Statistics')
+			.setDesc('Display progress bar and stats during study sessions')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.showProgressStats)
 				.onChange(async (value) => {
-					this.plugin.settings.defaultCommitMessage = value;
+					this.plugin.settings.showProgressStats = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Enable Keyboard Shortcuts')
+			.setDesc('Use keys 1-4 for difficulty buttons (Again, Hard, Good, Easy)')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableKeyboardShortcuts)
+				.onChange(async (value) => {
+					this.plugin.settings.enableKeyboardShortcuts = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Auto-Show Answer')
+			.setDesc('Automatically reveal the answer after a delay')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.autoShowAnswer)
+				.onChange(async (value) => {
+					this.plugin.settings.autoShowAnswer = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Auto-Show Delay (seconds)')
+			.setDesc('Seconds to wait before automatically showing the answer')
+			.addSlider(slider => slider
+				.setLimits(1, 30, 1)
+				.setValue(this.plugin.settings.autoShowAnswerDelay)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.autoShowAnswerDelay = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Fullscreen Study Mode')
+			.setDesc('Open study sessions in fullscreen modal')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableFullscreenStudy)
+				.onChange(async (value) => {
+					this.plugin.settings.enableFullscreenStudy = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Show Timer During Study')
+			.setDesc('Display a timer showing how long you\'ve spent on each card')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.showTimerDuringStudy)
+				.onChange(async (value) => {
+					this.plugin.settings.showTimerDuringStudy = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Content Processing Section
+		containerEl.createEl('h2', {text: '📝 Content Processing'});
+
+		new Setting(containerEl)
+			.setName('Include Highlighted Text')
+			.setDesc('Process highlighted text from Kindle clippings')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.includeHighlightedText)
+				.onChange(async (value) => {
+					this.plugin.settings.includeHighlightedText = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Include Book Notes')
+			.setDesc('Process personal notes from Kindle clippings')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.includeBookNotes)
+				.onChange(async (value) => {
+					this.plugin.settings.includeBookNotes = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Include Location Information')
+			.setDesc('Add page/location info to flashcards')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.includeLocationInfo)
+				.onChange(async (value) => {
+					this.plugin.settings.includeLocationInfo = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Minimum Content Length')
+			.setDesc('Minimum characters required for valid content')
+			.addSlider(slider => slider
+				.setLimits(1, 100, 5)
+				.setValue(this.plugin.settings.minimumContentLength)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.minimumContentLength = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Maximum Content Length')
+			.setDesc('Maximum characters before content is truncated')
+			.addSlider(slider => slider
+				.setLimits(100, 5000, 100)
+				.setValue(this.plugin.settings.maximumContentLength)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.maximumContentLength = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// File Organization Section
+		containerEl.createEl('h2', {text: '📁 File Organization'});
+
+		new Setting(containerEl)
+			.setName('Group Cards by Book')
+			.setDesc('Create separate folders for each book\'s flashcards')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.groupCardsByBook)
+				.onChange(async (value) => {
+					this.plugin.settings.groupCardsByBook = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Use Author-Based Folders')
+			.setDesc('Organize books into folders by author name')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.useBookAuthorFolders)
+				.onChange(async (value) => {
+					this.plugin.settings.useBookAuthorFolders = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Generate Table of Contents')
+			.setDesc('Create an index file listing all books and cards')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.generateTOC)
+				.onChange(async (value) => {
+					this.plugin.settings.generateTOC = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Include Metadata Files')
+			.setDesc('Generate JSON metadata files with book information')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.includeMetadataFiles)
+				.onChange(async (value) => {
+					this.plugin.settings.includeMetadataFiles = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Card File Naming Format')
+			.setDesc('Template for flashcard filenames. Use {{title}}, {{author}}, {{location}}, {{index}}')
+			.addText(text => text
+				.setPlaceholder('{{title}} - {{location}}')
+				.setValue(this.plugin.settings.cardFileNamingFormat)
+				.onChange(async (value) => {
+					this.plugin.settings.cardFileNamingFormat = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Enable Auto-Sync')
+			.setDesc('Automatically sync when Kindle files change (experimental)')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableAutoSync)
+				.onChange(async (value) => {
+					this.plugin.settings.enableAutoSync = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Backup Before Sync')
+			.setDesc('Create backup copies before syncing new content')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.backupBeforeSync)
+				.onChange(async (value) => {
+					this.plugin.settings.backupBeforeSync = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// UI/UX Preferences Section
+		containerEl.createEl('h2', {text: '🎨 UI/UX Preferences'});
+
+		new Setting(containerEl)
+			.setName('Preferred Theme')
+			.setDesc('Choose your preferred theme for the plugin interface')
+			.addDropdown(dropdown => dropdown
+				.addOption('auto', 'Auto (Follow Obsidian)')
+				.addOption('light', 'Light Theme')
+				.addOption('dark', 'Dark Theme')
+				.setValue(this.plugin.settings.preferredTheme)
+				.onChange(async (value: 'light' | 'dark' | 'auto') => {
+					this.plugin.settings.preferredTheme = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Compact Mode')
+			.setDesc('Use a more compact UI layout to save space')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.compactMode)
+				.onChange(async (value) => {
+					this.plugin.settings.compactMode = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Enable Bulk Operations')
+			.setDesc('Allow bulk editing and deleting of flashcards')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableBulkOperations)
+				.onChange(async (value) => {
+					this.plugin.settings.enableBulkOperations = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Confirm Deletions')
+			.setDesc('Ask for confirmation before deleting flashcards')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.confirmDeletions)
+				.onChange(async (value) => {
+					this.plugin.settings.confirmDeletions = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Show Advanced Statistics')
+			.setDesc('Display detailed statistics and analytics')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.showAdvancedStats)
+				.onChange(async (value) => {
+					this.plugin.settings.showAdvancedStats = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Performance Settings Section
+		containerEl.createEl('h2', {text: '⚡ Performance Settings'});
+
+		new Setting(containerEl)
+			.setName('Max Cards in Memory')
+			.setDesc('Maximum number of cards to keep loaded in memory')
+			.addSlider(slider => slider
+				.setLimits(100, 5000, 100)
+				.setValue(this.plugin.settings.maxCardsInMemory)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.maxCardsInMemory = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Enable Background Sync')
+			.setDesc('Sync Kindle data in the background (may impact performance)')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableBackgroundSync)
+				.onChange(async (value) => {
+					this.plugin.settings.enableBackgroundSync = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Cache Book Data')
+			.setDesc('Cache book metadata to improve loading times')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.cacheBookData)
+				.onChange(async (value) => {
+					this.plugin.settings.cacheBookData = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Enable Debug Logging')
+			.setDesc('Enable detailed logging for troubleshooting (may impact performance)')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableDebugLogging)
+				.onChange(async (value) => {
+					this.plugin.settings.enableDebugLogging = value;
+					await this.plugin.saveSettings();
+				}));
+
+		// Export/Import Settings Section
+		containerEl.createEl('h2', {text: '📤 Export/Import Settings'});
+
+		new Setting(containerEl)
+			.setName('Include Statistics in Export')
+			.setDesc('Include study statistics when exporting card data')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.exportIncludeStats)
+				.onChange(async (value) => {
+					this.plugin.settings.exportIncludeStats = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Default Export Format')
+			.setDesc('Default format for exporting flashcard data')
+			.addDropdown(dropdown => dropdown
+				.addOption('json', 'JSON Format')
+				.addOption('csv', 'CSV Spreadsheet')
+				.addOption('anki', 'Anki Deck Package')
+				.setValue(this.plugin.settings.exportFormat)
+				.onChange(async (value: 'json' | 'csv' | 'anki') => {
+					this.plugin.settings.exportFormat = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Enable Auto-Export')
+			.setDesc('Automatically export data at regular intervals')
+			.addToggle(toggle => toggle
+				.setValue(this.plugin.settings.enableAutoExport)
+				.onChange(async (value) => {
+					this.plugin.settings.enableAutoExport = value;
+					await this.plugin.saveSettings();
+				}));
+
+		new Setting(containerEl)
+			.setName('Auto-Export Interval (hours)')
+			.setDesc('Hours between automatic exports')
+			.addSlider(slider => slider
+				.setLimits(1, 168, 1)
+				.setValue(this.plugin.settings.autoExportInterval)
+				.setDynamicTooltip()
+				.onChange(async (value) => {
+					this.plugin.settings.autoExportInterval = value;
 					await this.plugin.saveSettings();
 				}));
 
 		// Spaced Repetition Section
-		containerEl.createEl('h2', {text: 'Spaced Repetition'});
+		containerEl.createEl('h2', {text: '🧠 Spaced Repetition'});
 
 		new Setting(containerEl)
 			.setName('Enable Spaced Repetition')
@@ -1049,8 +1414,136 @@ class KindleCardsSettingTab extends PluginSettingTab {
 
 					await this.plugin.saveSettings();
 
-					// Refresh the display
+					new Notice('Spaced repetition settings reset to Anki defaults');
 					this.display();
+				}));
+
+		// Management Actions Section
+		containerEl.createEl('h2', {text: '🔧 Management Actions'});
+
+		new Setting(containerEl)
+			.setName('Export All Settings')
+			.setDesc('Export your complete KindleCards configuration to a file')
+			.addButton(button => button
+				.setButtonText('Export Settings')
+				.setCta()
+				.onClick(async () => {
+					try {
+						const settings = JSON.stringify(this.plugin.settings, null, 2);
+						const blob = new Blob([settings], { type: 'application/json' });
+						const url = URL.createObjectURL(blob);
+						const a = document.createElement('a');
+						a.href = url;
+						a.download = `kindlecards-settings-${new Date().toISOString().split('T')[0]}.json`;
+						a.click();
+						URL.revokeObjectURL(url);
+						new Notice('Settings exported successfully');
+					} catch (error) {
+						new Notice('Failed to export settings');
+						console.error('Export error:', error);
+					}
+				}));
+
+		new Setting(containerEl)
+			.setName('Reset All Settings')
+			.setDesc('Reset ALL settings to default values (cannot be undone)')
+			.addButton(button => button
+				.setButtonText('Reset Everything')
+				.setWarning()
+				.onClick(async () => {
+					// Confirm action
+					const confirmed = await new Promise<boolean>((resolve) => {
+						const modal = new Modal(this.app);
+						modal.contentEl.createEl('h2', { text: '⚠️ Reset All Settings' });
+						modal.contentEl.createEl('p', { 
+							text: 'This will reset ALL KindleCards settings to their default values. This action cannot be undone.' 
+						});
+						modal.contentEl.createEl('p', { 
+							text: 'Your flashcard data and spaced repetition progress will be preserved, but all preferences will be lost.' 
+						});
+						
+						const buttonContainer = modal.contentEl.createEl('div', { cls: 'modal-button-container' });
+						buttonContainer.style.display = 'flex';
+						buttonContainer.style.gap = '10px';
+						buttonContainer.style.justifyContent = 'center';
+						buttonContainer.style.marginTop = '20px';
+						
+						const confirmBtn = buttonContainer.createEl('button', { text: 'Reset All Settings', cls: 'mod-warning' });
+						const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+						
+						confirmBtn.onclick = () => {
+							modal.close();
+							resolve(true);
+						};
+						cancelBtn.onclick = () => {
+							modal.close();
+							resolve(false);
+						};
+						
+						modal.open();
+					});
+					
+					if (confirmed) {
+						// Preserve spaced repetition data
+						const savedSRData = this.plugin.settings.spacedRepetitionData;
+						
+						// Reset to defaults
+						this.plugin.settings = Object.assign({}, DEFAULT_SETTINGS);
+						this.plugin.settings.spacedRepetitionData = savedSRData;
+						
+						await this.plugin.saveSettings();
+						new Notice('All settings reset to defaults');
+						this.display();
+					}
+				}));
+
+		new Setting(containerEl)
+			.setName('Clear Study Data')
+			.setDesc('Clear all spaced repetition progress and study statistics')
+			.addButton(button => button
+				.setButtonText('Clear Study Data')
+				.setWarning()
+				.onClick(async () => {
+					const confirmed = await new Promise<boolean>((resolve) => {
+						const modal = new Modal(this.app);
+						modal.contentEl.createEl('h2', { text: '⚠️ Clear Study Data' });
+						modal.contentEl.createEl('p', { 
+							text: 'This will clear all your spaced repetition progress and study statistics. All cards will be reset to "new" status.' 
+						});
+						modal.contentEl.createEl('p', { 
+							text: 'This action cannot be undone!' 
+						});
+						
+						const buttonContainer = modal.contentEl.createEl('div', { cls: 'modal-button-container' });
+						buttonContainer.style.display = 'flex';
+						buttonContainer.style.gap = '10px';
+						buttonContainer.style.justifyContent = 'center';
+						buttonContainer.style.marginTop = '20px';
+						
+						const confirmBtn = buttonContainer.createEl('button', { text: 'Clear All Data', cls: 'mod-warning' });
+						const cancelBtn = buttonContainer.createEl('button', { text: 'Cancel' });
+						
+						confirmBtn.onclick = () => {
+							modal.close();
+							resolve(true);
+						};
+						cancelBtn.onclick = () => {
+							modal.close();
+							resolve(false);
+						};
+						
+						modal.open();
+					});
+					
+					if (confirmed) {
+						this.plugin.settings.spacedRepetitionData = {};
+						if (this.plugin.spacedRepetition) {
+							this.plugin.spacedRepetition = new SpacedRepetitionSystem({}, this.plugin.settings);
+						}
+						await this.plugin.saveSettings();
+						new Notice('All study data cleared');
+						this.display();
+					}
 				}));		// Show spaced repetition stats if enabled
 		if (this.plugin.settings.enableSpacedRepetition) {
 			const allCardIds = Object.keys(this.plugin.settings.spacedRepetitionData);
@@ -1082,12 +1575,10 @@ class CommitMessageModal extends Modal {
 	private changedFiles: number;
 	private onSubmit: (message: string | null) => void;
 	private messageInput: TextComponent;
-	private plugin: KindleCardsPlugin;
 
-	constructor(app: App, changedFiles: number, plugin: KindleCardsPlugin, onSubmit: (message: string | null) => void) {
+	constructor(app: App, changedFiles: number, onSubmit: (message: string | null) => void) {
 		super(app);
 		this.changedFiles = changedFiles;
-		this.plugin = plugin;
 		this.onSubmit = onSubmit;
 	}
 
@@ -1105,13 +1596,12 @@ class CommitMessageModal extends Modal {
 
 		// Input field
 		const inputContainer = contentEl.createEl('div', { cls: 'commit-input-container' });
-		
-		const defaultMessage = this.plugin.settings.defaultCommitMessage || 'Update KindleCards';
-		const timestampedMessage = `${defaultMessage} - ${new Date().toLocaleDateString()}`;
-		
+
 		this.messageInput = new TextComponent(inputContainer)
 			.setPlaceholder('e.g., Add new feature, Fix bug, Update documentation...')
-			.setValue(timestampedMessage);		this.messageInput.inputEl.style.width = '100%';
+			.setValue(`Update KindleCards - ${new Date().toLocaleDateString()}`);
+
+		this.messageInput.inputEl.style.width = '100%';
 		this.messageInput.inputEl.style.marginBottom = '1em';
 
 		// Suggestions

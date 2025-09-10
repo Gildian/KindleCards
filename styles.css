@@ -1234,3 +1234,179 @@
 ::-webkit-scrollbar-thumb:hover {
     background: var(--kindle-primary-hover);
 }
+
+/* Enhanced Settings Interface */
+.setting-item h1 {
+    background: var(--kindle-gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+
+.setting-item h2 {
+    color: var(--text-normal);
+    font-size: 20px;
+    font-weight: 700;
+    margin: 30px 0 15px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--background-modifier-border);
+    position: relative;
+}
+
+.setting-item h2::before {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    width: 60px;
+    height: 2px;
+    background: var(--kindle-gradient);
+}
+
+.setting-item h3 {
+    color: var(--text-accent);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 20px 0 10px 0;
+}
+
+.setting-item-description {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 25px;
+    padding: 15px;
+    background: var(--background-secondary);
+    border-radius: 8px;
+    border-left: 4px solid var(--kindle-primary);
+}
+
+.setting-item {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    transition: var(--kindle-transition);
+}
+
+.setting-item:hover {
+    background: var(--background-secondary);
+    border-color: var(--kindle-primary);
+}
+
+.setting-item .setting-item-name {
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.setting-item .setting-item-description {
+    color: var(--text-muted);
+    margin-top: 5px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+}
+
+/* Enhanced buttons in settings */
+.setting-item button {
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    transition: var(--kindle-transition) !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+.setting-item button.mod-cta {
+    background: var(--kindle-gradient) !important;
+    color: white !important;
+    border: 2px solid transparent !important;
+}
+
+.setting-item button.mod-cta:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(255, 149, 0, 0.4) !important;
+}
+
+.setting-item button.mod-warning {
+    background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%) !important;
+    color: white !important;
+    border: 2px solid transparent !important;
+}
+
+.setting-item button.mod-warning:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 20px rgba(255, 71, 87, 0.4) !important;
+}
+
+/* Enhanced toggles */
+.setting-item .checkbox-container {
+    border-radius: 12px;
+    background: var(--background-secondary) !important;
+    border: 2px solid var(--background-modifier-border) !important;
+    transition: var(--kindle-transition) !important;
+}
+
+.setting-item .checkbox-container.is-enabled {
+    background: var(--kindle-gradient) !important;
+    border-color: var(--kindle-primary) !important;
+}
+
+/* Enhanced sliders */
+.setting-item .slider {
+    background: var(--background-secondary) !important;
+    border-radius: 10px !important;
+}
+
+.setting-item .slider .slider-track {
+    background: var(--kindle-gradient) !important;
+    border-radius: 10px !important;
+}
+
+.setting-item .slider .slider-thumb {
+    background: var(--kindle-primary) !important;
+    border: 3px solid white !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Enhanced dropdowns */
+.setting-item .dropdown {
+    border: 2px solid var(--background-modifier-border) !important;
+    border-radius: 8px !important;
+    background: var(--background-secondary) !important;
+    transition: var(--kindle-transition) !important;
+}
+
+.setting-item .dropdown:hover {
+    border-color: var(--kindle-primary) !important;
+}
+
+/* Modal enhancements */
+.modal-button-container {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.modal-button-container button {
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    transition: var(--kindle-transition);
+}
+
+.modal-button-container button.mod-warning {
+    background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%);
+    color: white;
+    border: none;
+}
+
+.modal-button-container button:not(.mod-warning) {
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    border: 2px solid var(--background-modifier-border);
+}

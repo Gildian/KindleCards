@@ -40,6 +40,7 @@ export interface KindleCardsSettings {
 	spacedRepetitionData: Record<string, CardReviewData>;
 	enableSpacedRepetition: boolean;
 	newCardsPerDay: number;
+	
 	// Anki-like SRS Settings
 	learningSteps: number[]; // Learning steps in minutes (e.g., [1, 10])
 	relearningSteps: number[]; // Relearning steps in minutes
@@ -54,6 +55,54 @@ export interface KindleCardsSettings {
 	minimumInterval: number; // Minimum interval in days
 	leechThreshold: number; // Number of lapses before card becomes leech
 	maximumReviewsPerDay: number;
+	
+	// Study Experience Settings
+	enableCardFlipAnimation: boolean; // Animate card flipping
+	showProgressStats: boolean; // Show progress during study
+	enableKeyboardShortcuts: boolean; // Enable keyboard shortcuts (1-4 for answers)
+	autoShowAnswer: boolean; // Automatically show answer after delay
+	autoShowAnswerDelay: number; // Delay in seconds before showing answer
+	enableFullscreenStudy: boolean; // Open study modal in fullscreen
+	showTimerDuringStudy: boolean; // Show timer for each card
+	enableSoundEffects: boolean; // Play sounds for correct/incorrect answers
+	
+	// Content Processing Settings
+	includeHighlightedText: boolean; // Include highlighted text in cards
+	includeBookNotes: boolean; // Include book notes in cards
+	includeLocationInfo: boolean; // Include location/page info in cards
+	minimumContentLength: number; // Minimum characters for valid content
+	maximumContentLength: number; // Maximum characters for content (truncate)
+	excludePatterns: string[]; // Regex patterns to exclude from content
+	includeOnlyPatterns: string[]; // Only include content matching these patterns
+	
+	// File Organization Settings
+	groupCardsByBook: boolean; // Group cards in separate folders by book
+	useBookAuthorFolders: boolean; // Create author-based folder structure
+	generateTOC: boolean; // Generate table of contents file
+	includeMetadataFiles: boolean; // Generate metadata JSON files
+	cardFileNamingFormat: string; // Format for card filenames
+	enableAutoSync: boolean; // Auto-sync when Kindle files change
+	backupBeforeSync: boolean; // Create backup before syncing
+	
+	// UI/UX Preferences
+	preferredTheme: 'light' | 'dark' | 'auto'; // Theme preference
+	compactMode: boolean; // Use compact UI layout
+	showBookCovers: boolean; // Show book covers when available
+	enableBulkOperations: boolean; // Enable bulk edit/delete operations
+	confirmDeletions: boolean; // Confirm before deleting cards
+	showAdvancedStats: boolean; // Show detailed statistics
+	
+	// Performance Settings
+	maxCardsInMemory: number; // Maximum cards to keep in memory
+	enableBackgroundSync: boolean; // Sync in background
+	cacheBookData: boolean; // Cache book metadata
+	enableDebugLogging: boolean; // Enable debug logging
+	
+	// Export/Import Settings
+	exportIncludeStats: boolean; // Include stats in export
+	exportFormat: 'json' | 'csv' | 'anki'; // Default export format
+	enableAutoExport: boolean; // Auto-export data periodically
+	autoExportInterval: number; // Hours between auto-exports
 }
 
 export interface BookGroup {
